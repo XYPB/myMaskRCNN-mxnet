@@ -12,6 +12,9 @@ from symdata.loader import TestLoader
 from symnet.logger import logger
 from symnet.model import load_param, check_shape
 
+import os
+os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = "0"
+
 
 def test_net(sym, imdb, args):
     # print config

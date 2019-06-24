@@ -12,6 +12,9 @@ from symnet.model import load_param, infer_data_shape, check_shape, initialize_f
 # from symnet.metric import RPNAccMetric, RPNLogLossMetric, RPNL1LossMetric, RCNNAccMetric, RCNNLogLossMetric, RCNNL1LossMetric
 import symnet.metric as mtrs
 
+import os
+os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = "0"
+
 RPN_FEAT_STRIDE = [64, 32, 16, 8, 4]
 ANCHOR_SCALES = (8,)
 

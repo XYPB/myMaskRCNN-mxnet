@@ -1,4 +1,10 @@
 import numpy as np
+from cython.cpu_nms import cpu_nms
+from cython.bbox import bbox_overlaps_cython
+
+
+def bbox_overlaps(boxes, query_boxes):
+    return bbox_overlaps_cython(np.array(boxes, dtype=np.float), np.array(query_boxes, dtype=np.float))
 
 
 def bbox_flip(bbox, width, flip_x=False):
@@ -18,7 +24,7 @@ def bbox_flip(bbox, width, flip_x=False):
     return bbox
 
 
-def bbox_overlaps(boxes, query_boxes):
+def bbox_overlaps_py(boxes, query_boxes):
     """
     determine overlaps between boxes and query_boxes
     :param boxes: n * 4 bounding boxes
@@ -187,7 +193,7 @@ def im_detect(rois, scores, bbox_deltas, im_info,
         cls_scores = scores[indexes, j, np.newaxis]
         cls_boxes = pred_boxes[indexes, j * 4:(j + 1) * 4]
         cls_dets = np.hstack((cls_boxes, cls_scores))
-        keep = nms(cls_dets, thresh=nms_thresh)
+        keep = cpu_nms(np.array(cls_dets, dtype=np.float32), np.float(nms_thresh))
 
         cls_id = np.ones_like(cls_scores) * j
         det.append(np.hstack((cls_id, cls_scores, cls_boxes))[keep, :])
