@@ -239,7 +239,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
 
 
     # rpn网络的rois
-    rois_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
+    rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
     # rpn 网络的输出
     rpn_cls_score_concat = mx.symbol.Concat(*rpn_cls_score_list, dim=0, name='rpn_cls_score_concat')
     rpn_cls_output_concat = mx.symbol.Concat(*rpn_cls_prob_list, dim=0, name='rpn_cls_output_concat')
@@ -256,7 +256,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
 
     # rcnn classification
 
-    flatten = mx.symbol.Flatten(data=rois_concat, name="flatten")
+    flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024)
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
@@ -313,6 +313,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     rpn_conv_bbox_bias = mx.symbol.Variable('rpn_bbox_pred_bias')
 
     rois_pool_list = []
+    rois_list = []
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
@@ -359,6 +360,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
 
         # rcnn roi pooling
         if i != 4:
+            rois_list.append(rois)
             roi_pool = mx.symbol.contrib.ROIAlign(
                         name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
                         pooled_size=(14, 14),
@@ -366,7 +368,8 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
             rois_pool_list.append(roi_pool)
 
     # rpn网络的rois
-    rois_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
+    rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
+    rois_concat = mx.symbol.Concat(*rois_list, dim=0)
     # rpn 网络的输出
     # rpn网络loss的weight和target
 
@@ -377,7 +380,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
 
     # rcnn classification
 
-    flatten = mx.symbol.Flatten(data=rois_concat, name="flatten")
+    flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024)
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
@@ -385,7 +388,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
     cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
-    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score)
+    cls_prob = mx.symbol.softmax(name='cls_prob', data=cls_score)
 
     # rcnn bbox regression
     bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
@@ -397,5 +400,5 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     # group output
     # print(mx.symbol.BlockGrad(label))
 
-    group = mx.symbol.Group([rois_concat, cls_prob, bbox_pred,])
+    group = mx.symbol.Group([rois_concat, cls_prob, bbox_pred])
     return group
