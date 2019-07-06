@@ -154,7 +154,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     labels_list = []
     bbox_target_list = []
     bbox_weight_list = []
-    rpn_cls_score_list = []
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         # print(i, stride)
         # print(fpn_bbox_targets[i])
@@ -168,9 +167,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
-        _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
-        # print(output_shape)
-        
         # fpn classification
         # ROI Proposal
         rpn_cls_score = mx.symbol.Convolution(data=rpn_relu,
@@ -188,6 +184,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                                                 normalization='valid',
                                                 use_ignore=True,
                                                 ignore_label=-1,
+                                                grad_scale=1,
                                                 name="rpn_cls_output%s" %stride)
         rpn_cls_prob = mx.symbol.SoftmaxActivation(data=rpn_cls_score_reshape,
                                                     mode="channel",
@@ -196,7 +193,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                                                 shape=(0, 2 * num_anchors, -1, 0),
                                                 name='rpn_cls_prob_reshape%s' %stride)
         rpn_cls_prob_list.append(rpn_cls_output)
-        rpn_cls_score_list.append(rpn_cls_score)
 
         # fpn bounding box regression
         rpn_bbox_pred = mx.symbol.Convolution(data=rpn_relu,
@@ -208,7 +204,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_loss_ = fpn_bbox_weights[i] * mx.symbol.smooth_l1(name='rpn_bbox_loss_%s'%stride,
                                                                     scalar=3.0,
                                                                     data=(rpn_bbox_pred - fpn_bbox_targets[i]))
-        rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1.0 / rpn_batch_rois)
+        rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1 / rpn_batch_rois)
         rpn_bbox_loss_list.append(rpn_bbox_loss)
 
         # rpn proposal
@@ -221,7 +217,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         # print(stride)
         group = mx.symbol.Custom(rois=rois, gt_boxes=gt_boxes, op_type='proposal_target',
                                 num_classes=num_classes, batch_images=rcnn_batch_size,
-                                batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
+                                batch_rois=rcnn_batch_rois//5, fg_fraction=rcnn_fg_fraction,
                                 fg_overlap=rcnn_fg_overlap, box_stds=rcnn_bbox_stds)
         rois = group[0]
         if i != 4:
@@ -241,9 +237,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     # rpn网络的rois
     rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
     # rpn 网络的输出
-    rpn_cls_score_concat = mx.symbol.Concat(*rpn_cls_score_list, dim=0, name='rpn_cls_score_concat')
-    rpn_cls_output_concat = mx.symbol.Concat(*rpn_cls_prob_list, dim=0, name='rpn_cls_output_concat')
-    rpn_bbox_loss_concat = mx.symbol.Concat(*rpn_bbox_loss_list, dim=0, name='rpn_bbox_loss_concat')
     labels_list_concat = mx.symbol.Concat(*labels_list, dim=0, name='labels_list_concat')
     # rpn网络loss的weight和target
     bbox_target_concat = mx.symbol.Concat(*bbox_target_list, dim=0, name='bbox_target_concat')
@@ -283,10 +276,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                             rpn_bbox_loss_list[0], rpn_bbox_loss_list[1], rpn_bbox_loss_list[2], rpn_bbox_loss_list[3], rpn_bbox_loss_list[4],
                             cls_prob, bbox_loss,
                             mx.symbol.BlockGrad(label)])
-    # group = mx.symbol.Group([rpn_cls_output_concat,
-    #                         rpn_bbox_loss_concat,
-    #                         cls_prob, bbox_loss,
-    #                         mx.symbol.BlockGrad(label)])
     return group
 
 
