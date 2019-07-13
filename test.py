@@ -76,7 +76,7 @@ def test_net(sym, imdb, args):
 def parse_args():
     parser = argparse.ArgumentParser(description='Test a Faster R-CNN network',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--network', type=str, default='resnet50', help='base network')
+    parser.add_argument('--network', type=str, default='vgg16', help='base network')
     parser.add_argument('--params', type=str, default='', help='path to trained model')
     parser.add_argument('--dataset', type=str, default='voc', help='training dataset')
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
@@ -192,6 +192,7 @@ def get_dataset(dataset, args):
 
 def get_network(network, args):
     networks = {
+        'vgg16': get_vgg16_test,
         'resnet50': get_resnet50_test,
         'resnet101': get_resnet101_test
     }

@@ -163,7 +163,7 @@ def train_net(sym, roidb, args):
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Faster R-CNN network',
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--network', type=str, default='resnet50', help='base network')
+    parser.add_argument('--network', type=str, default='vgg16', help='base network')
     parser.add_argument('--pretrained', type=str, default='', help='path to pretrained model')
     parser.add_argument('--dataset', type=str, default='voc', help='training dataset')
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
@@ -173,7 +173,7 @@ def parse_args():
     parser.add_argument('--lr-decay-epoch', type=str, default='7', help='epoch to decay lr')
     parser.add_argument('--resume', type=str, default='', help='path to last saved model')
     parser.add_argument('--start-epoch', type=int, default=0, help='start epoch for resuming')
-    parser.add_argument('--log-interval', type=int, default=25, help='logging mini batch interval')
+    parser.add_argument('--log-interval', type=int, default=5, help='logging mini batch interval')
     parser.add_argument('--save-prefix', type=str, default='', help='saving params prefix')
     # faster rcnn params
     parser.add_argument('--img-short-side', type=int, default=600)
@@ -189,7 +189,7 @@ def parse_args():
     parser.add_argument('--rpn-nms-thresh', type=float, default=0.7)
     parser.add_argument('--rpn-min-size', type=int, default=16)
     parser.add_argument('--rpn-batch-rois', type=int, default=256)
-    parser.add_argument('--rpn-allowed-border', type=int, default=999)
+    parser.add_argument('--rpn-allowed-border', type=int, default=0)
     parser.add_argument('--rpn-fg-fraction', type=float, default=0.5)
     parser.add_argument('--rpn-fg-overlap', type=float, default=0.7)
     parser.add_argument('--rpn-bg-overlap', type=float, default=0.3)
@@ -197,7 +197,7 @@ def parse_args():
     parser.add_argument('--rcnn-feat-stride', type=int, default=16)
     parser.add_argument('--rcnn-pooled-size', type=str, default='(14, 14)')
     parser.add_argument('--rcnn-batch-size', type=int, default=1)
-    parser.add_argument('--rcnn-batch-rois', type=int, default=512)
+    parser.add_argument('--rcnn-batch-rois', type=int, default=128)
     parser.add_argument('--rcnn-fg-fraction', type=float, default=0.25)
     parser.add_argument('--rcnn-fg-overlap', type=float, default=0.5)
     parser.add_argument('--rcnn-bbox-stds', type=str, default='(0.1, 0.1, 0.2, 0.2)')
@@ -324,6 +324,7 @@ def get_dataset(dataset, args):
 
 def get_network(network, args):
     networks = {
+        'vgg16': get_vgg16_train,
         'resnet50': get_resnet50_train,
         'resnet101': get_resnet101_train
     }

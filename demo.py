@@ -71,7 +71,7 @@ def demo_net(sym, class_names, args):
 def parse_args():
     parser = argparse.ArgumentParser(description='Demonstrate a Faster R-CNN network',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--network', type=str, default='resnet50', help='base network')
+    parser.add_argument('--network', type=str, default='vgg16', help='base network')
     parser.add_argument('--params', type=str, default='', help='path to trained model')
     parser.add_argument('--dataset', type=str, default='voc', help='training dataset')
     parser.add_argument('--image', type=str, default='', help='path to test image')
@@ -184,6 +184,7 @@ def get_class_names(dataset, args):
 
 def get_network(network, args):
     networks = {
+        'vgg16': get_vgg16_test,
         'resnet50': get_resnet50_test,
         'resnet101': get_resnet101_test
     }

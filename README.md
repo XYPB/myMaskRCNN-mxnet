@@ -32,7 +32,7 @@ Make a directory `data` and follow `py-faster-rcnn` for data preparation instruc
 Use `python3 train.py --dataset $Dataset$ --network $Network$ --pretrained $IMAGENET_MODEL_FILE$ --gpus $GPUS$` to train,
 for example, `python3 train.py --dataset voc --network resnet50 --pretrained model/resnet-50-0000.params --gpus 0`.
 Use `python3 test.py --dataset $Dataset$ --network $Network$ --params $MODEL_FILE$ --gpu $GPU$` to evaluate,
-for example, `python3 test.py --dataset voc --network resnet50 --params model/resnet-50-0000.params --gpu 0`.
+for example, `python3 test.py --dataset voc --network resnet50 --params model/resnet50-0000.params --gpu 0`.
 
 ### History
 * May 25, 2016: We released Fast R-CNN implementation.
