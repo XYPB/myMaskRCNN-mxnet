@@ -163,7 +163,7 @@ def train_net(sym, roidb, args):
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Faster R-CNN network',
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--network', type=str, default='vgg16', help='base network')
+    parser.add_argument('--network', type=str, default='resnet50', help='base network')
     parser.add_argument('--pretrained', type=str, default='', help='path to pretrained model')
     parser.add_argument('--dataset', type=str, default='voc', help='training dataset')
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
@@ -197,7 +197,7 @@ def parse_args():
     parser.add_argument('--rcnn-feat-stride', type=int, default=16)
     parser.add_argument('--rcnn-pooled-size', type=str, default='(14, 14)')
     parser.add_argument('--rcnn-batch-size', type=int, default=1)
-    parser.add_argument('--rcnn-batch-rois', type=int, default=128)
+    parser.add_argument('--rcnn-batch-rois', type=int, default=64)
     parser.add_argument('--rcnn-fg-fraction', type=float, default=0.25)
     parser.add_argument('--rcnn-fg-overlap', type=float, default=0.5)
     parser.add_argument('--rcnn-bbox-stds', type=str, default='(0.1, 0.1, 0.2, 0.2)')

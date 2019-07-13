@@ -64,15 +64,15 @@ def check_shape(symbol, data_shapes, arg_params, aux_params):
 def initialize_frcnn(symbol, data_shapes, arg_params, aux_params):
     arg_shape_dict, aux_shape_dict = infer_param_shape(symbol, data_shapes)
     arg_params['rpn_conv_3x3_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['rpn_conv_3x3_weight'])
-    arg_params['rpn_conv_3x3_bias'] = mx.nd.zeros(shape=arg_shape_dict['rpn_conv_3x3_bias'])
     arg_params['rpn_cls_score_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['rpn_cls_score_weight'])
-    arg_params['rpn_cls_score_bias'] = mx.nd.zeros(shape=arg_shape_dict['rpn_cls_score_bias'])
     arg_params['rpn_bbox_pred_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['rpn_bbox_pred_weight'])
-    arg_params['rpn_bbox_pred_bias'] = mx.nd.zeros(shape=arg_shape_dict['rpn_bbox_pred_bias'])
     arg_params['cls_score_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['cls_score_weight'])
-    arg_params['cls_score_bias'] = mx.nd.zeros(shape=arg_shape_dict['cls_score_bias'])
     arg_params['bbox_pred_weight'] = mx.random.normal(0, 0.001, shape=arg_shape_dict['bbox_pred_weight'])
-    arg_params['bbox_pred_bias'] = mx.nd.zeros(shape=arg_shape_dict['bbox_pred_bias'])
+    for P in range(2, 6):
+        arg_params['P{}_lateral_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_lateral_weight'.format(P)])
+    for P in range(2, 5):
+        arg_params['P{}_aggregate_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_aggregate_weight'.format(P)])
+    arg_params['fc6_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['fc6_weight'])
     return arg_params, aux_params
 
 
