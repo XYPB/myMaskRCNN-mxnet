@@ -383,10 +383,10 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     # rcnn classification
 
     flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
-    fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024)
+    fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024)
+    fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
     relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
     cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
