@@ -3,12 +3,38 @@ import json
 import numpy as np
 from builtins import range
 
+import hickle as hkl
 from symnet.logger import logger
 from .imdb import IMDB
 
 # coco api
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+
+from .mask_coco2voc import mask_coco2voc
+
+import multiprocessing as mp
+
+def generate_cache_seg_inst_kernel(annWithObjs):
+    """
+    generate cache_seg_inst
+    :param annWithObjs: tuple of anns and objs
+    """
+    ann = annWithObjs[0]      # the dictionary
+    objs = annWithObjs[1]     # objs
+    gt_mask_file = ann['cache_seg_inst']
+    if not gt_mask_file:
+        return
+    gt_mask_flip_file = os.path.join(os.path.splitext(gt_mask_file)[0] + '_flip.hkl')
+    if os.path.exists(gt_mask_file) and os.path.exists(gt_mask_flip_file):
+        return
+    gt_mask_encode = [x['segmentation'] for x in objs]
+    gt_mask = mask_coco2voc(gt_mask_encode, ann['height'], ann['width'])
+    if not os.path.exists(gt_mask_file):
+        hkl.dump(gt_mask.astype('bool'), gt_mask_file, mode='w', compression='gzip')
+    # cache flip gt_masks
+    if not os.path.exists(gt_mask_flip_file):
+        hkl.dump(gt_mask[:, :, ::-1].astype('bool'), gt_mask_flip_file, mode='w', compression='gzip')
 
 
 class coco(IMDB):
@@ -56,6 +82,13 @@ class coco(IMDB):
 
         image_ids = _coco.getImgIds()
         gt_roidb = [self._load_annotation(_coco, coco_ind_to_class_ind, index) for index in image_ids]
+        
+        generate_cache_seg_inst_kernel(gt_roidb[0])
+        pool = mp.Pool(mp.cpu_count())
+        pool.map(generate_cache_seg_inst_kernel, gt_roidb)
+        pool.close()
+        pool.join()
+
         return gt_roidb
 
     def _load_annotation(self, _coco, coco_ind_to_class_ind, index):
@@ -70,11 +103,11 @@ class coco(IMDB):
         :return: roidb entry
         """
         im_ann = _coco.loadImgs(index)[0]
-        filename = self._image_file_tmpl.format(im_ann['file_name'])
         width = im_ann['width']
         height = im_ann['height']
 
-        annIds = _coco.getAnnIds(imgIds=index, iscrowd=None)
+        # only load objs whose iscrowd==false
+        annIds = _coco.getAnnIds(imgIds=index, iscrowd=False)
         objs = _coco.loadAnns(annIds)
 
         # sanitize bboxes
@@ -92,20 +125,29 @@ class coco(IMDB):
         num_objs = len(objs)
 
         boxes = np.zeros((num_objs, 4), dtype=np.uint16)
-        gt_classes = np.zeros((num_objs,), dtype=np.int32)
+        gt_classes = np.zeros((num_objs), dtype=np.int32)
+        overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
+
         for ix, obj in enumerate(objs):
-            cls = coco_ind_to_class_ind[obj['category_id']]
+            cls = _coco._coco_ind_to_class_ind[obj['category_id']]
             boxes[ix, :] = obj['clean_bbox']
             gt_classes[ix] = cls
+            if obj['iscrowd']:
+                overlaps[ix, :] = -1.0
+            else:
+                overlaps[ix, cls] = 1.0
 
-        roi_rec = {'index': index,
-                   'image': filename,
+        sds_rec = {'image': self.image_path_from_index(index),
                    'height': height,
                    'width': width,
                    'boxes': boxes,
                    'gt_classes': gt_classes,
+                   'gt_overlaps': overlaps,
+                   'max_classes': overlaps.argmax(axis=1),
+                   'max_overlaps': overlaps.max(axis=1),
+                   'cache_seg_inst': self.mask_path_from_index(index),
                    'flipped': False}
-        return roi_rec
+        return sds_rec, objs
 
     def _evaluate_detections(self, detections, **kargs):
         _coco = COCO(self._anno_file)
@@ -191,3 +233,29 @@ class coco(IMDB):
 
         logger.info('~~~~ Summary metrics ~~~~')
         coco_eval.summarize()
+
+    
+
+    def image_path_from_index(self, index):
+        """ example: images / train2014 / COCO_train2014_000000119993.jpg """
+        filename = 'COCO_%s_%012d.jpg' % (self.data_name, index)
+        image_path = os.path.join(self.data_path, self.data_name, filename)
+        assert os.path.exists(image_path), 'Path does not exist: {}'.format(image_path)
+        return image_path
+        
+
+    def mask_path_from_index(self, index):
+        """
+        given image index, cache high resolution mask and return full path of masks
+        :param index: index of a specific image
+        :return: full path of this mask
+        """
+        if self.data_name == 'val':
+            return []
+        cache_file = os.path.join(self.cache_path, 'COCOMask', self.data_name)
+        if not os.path.exists(cache_file):
+            os.makedirs(cache_file)
+        # instance level segmentation
+        filename = 'COCO_%s_%012d' % (self.data_name, index)
+        gt_mask_file = os.path.join(cache_file, filename + '.hkl')
+        return gt_mask_file

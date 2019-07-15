@@ -208,7 +208,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_loss_ = fpn_bbox_weights[i] * mx.symbol.smooth_l1(name='rpn_bbox_loss_%s'%stride,
                                                                     scalar=3.0,
                                                                     data=(rpn_bbox_pred - fpn_bbox_targets[i]))
-        rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1.0 / rpn_batch_rois)
+        rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1 / rpn_batch_rois)
         rpn_bbox_loss_list.append(rpn_bbox_loss)
 
         # rpn proposal
@@ -223,21 +223,17 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                                 num_classes=num_classes, batch_images=rcnn_batch_size,
                                 batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
                                 fg_overlap=rcnn_fg_overlap, box_stds=rcnn_bbox_stds)
-        
-        if i != 4:
-            rois = group[0]
-            print(rois)
-            labels_list.append(group[1])
-            bbox_target_list.append(group[2])
-            bbox_weight_list.append(group[3])
+        rois = group[0]
+        labels_list.append(group[1])
+        bbox_target_list.append(group[2])
+        bbox_weight_list.append(group[3])
 
         # rcnn roi pooling
-        if i != 4:
-            roi_pool = mx.symbol.contrib.ROIAlign(
-                        name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
-                        pooled_size=(14, 14),
-                        spatial_scale=1.0 / stride)
-            rois_pool_list.append(roi_pool)
+        roi_pool = mx.symbol.contrib.ROIAlign(
+                    name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
+                    pooled_size=(14, 14),
+                    spatial_scale=1.0 / stride)
+        rois_pool_list.append(roi_pool)
 
 
     # rpn网络的rois
@@ -361,13 +357,12 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
                                                 threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
 
         # rcnn roi pooling
-        if i != 4:
-            rois_list.append(rois)
-            roi_pool = mx.symbol.contrib.ROIAlign(
-                        name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
-                        pooled_size=(14, 14),
-                        spatial_scale=1.0 / stride)
-            rois_pool_list.append(roi_pool)
+        rois_list.append(rois)
+        roi_pool = mx.symbol.contrib.ROIAlign(
+                    name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
+                    pooled_size=(14, 14),
+                    spatial_scale=1.0 / stride)
+        rois_pool_list.append(roi_pool)
 
     # rpn网络的rois
     rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
