@@ -1,5 +1,5 @@
 import mxnet as mx
-from . import proposal_target
+from . import proposal_target, assign_rois
 
 eps=2e-5
 use_global_stats=True
@@ -150,6 +150,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
 
     rpn_cls_prob_list = []
     rois_pool_list = []
+    rois_list = []
     rpn_bbox_loss_list = []
     labels_list = []
     bbox_target_list = []
@@ -168,7 +169,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
-        _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
+        # _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
         # print(output_shape)
         
         # fpn classification
@@ -212,41 +213,59 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_loss_list.append(rpn_bbox_loss)
 
         # rpn proposal
-        rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info,     name='rois%s'%stride,
+        rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info, name='rois%s'%stride,
                                                 feature_stride=stride, scales=anchor_scales, ratios=anchor_ratios,
                                                 rpn_pre_nms_top_n=rpn_pre_topk, rpn_post_nms_top_n=rpn_post_topk,
                                                 threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
         
         # rcnn roi proposal target
         # print(stride)
-        group = mx.symbol.Custom(rois=rois, gt_boxes=gt_boxes, op_type='proposal_target',
-                                num_classes=num_classes, batch_images=rcnn_batch_size,
-                                batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
-                                fg_overlap=rcnn_fg_overlap, box_stds=rcnn_bbox_stds)
-        rois = group[0]
-        labels_list.append(group[1])
-        bbox_target_list.append(group[2])
-        bbox_weight_list.append(group[3])
+        rois_list.append(rois)
 
-        # rcnn roi pooling
-        roi_pool = mx.symbol.contrib.ROIAlign(
-                    name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
-                    pooled_size=(14, 14),
-                    spatial_scale=1.0 / stride)
-        rois_pool_list.append(roi_pool)
+    rois_list_concat = mx.symbol.Concat(*rois_list, dim=0, name='rois_list_concat')
+    group = mx.symbol.Custom(rois=rois_list_concat, gt_boxes=gt_boxes, op_type='proposal_target',
+                            num_classes=num_classes, batch_images=rcnn_batch_size,
+                            batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
+                            fg_overlap=rcnn_fg_overlap, box_stds=rcnn_bbox_stds)
+    # rois_list.append(group[0])
+    # labels_list.append(group[1])
+    # bbox_target_list.append(group[2])
+    # bbox_weight_list.append(group[3])
+    
+    # rois_list_concat = mx.symbol.Concat(*rois_list, dim=0, name='rois_list_concat')
+    # labels_list_concat = mx.symbol.Concat(*labels_list, dim=0, name='labels_list_concat')
+    # bbox_target_concat = mx.symbol.Concat(*bbox_target_list, dim=0, name='bbox_target_concat')
+    # bbox_weight_concat = mx.symbol.Concat(*bbox_weight_list, dim=0, name='bbox_weight_concat')
+
+    
+    rois_list_concat = group[0]
+    labels_list_concat = group[1]
+    bbox_target_concat = group[2]
+    bbox_weight_concat = group[3]
 
 
     # rpn网络的rois
-    rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
     # rpn 网络的输出
     rpn_cls_score_concat = mx.symbol.Concat(*rpn_cls_score_list, dim=0, name='rpn_cls_score_concat')
     rpn_cls_output_concat = mx.symbol.Concat(*rpn_cls_prob_list, dim=0, name='rpn_cls_output_concat')
     rpn_bbox_loss_concat = mx.symbol.Concat(*rpn_bbox_loss_list, dim=0, name='rpn_bbox_loss_concat')
-    labels_list_concat = mx.symbol.Concat(*labels_list, dim=0, name='labels_list_concat')
-    # rpn网络loss的weight和target
-    bbox_target_concat = mx.symbol.Concat(*bbox_target_list, dim=0, name='bbox_target_concat')
-    bbox_weight_concat = mx.symbol.Concat(*bbox_weight_list, dim=0, name='bbox_weight_concat')
 
+    group = mx.symbol.Custom(
+        rois=rois_list_concat,
+        P2=conv_fpn_feat['stride4'],
+        P3=conv_fpn_feat['stride8'],
+        P4=conv_fpn_feat['stride16'],
+        P5=conv_fpn_feat['stride32'],
+        op_type='assign_rois'
+        )
+    rois_align_concat = group[0]
+
+    # stride = 32
+    # roi_pool = mx.symbol.contrib.ROIAlign(
+    #         name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois_list_concat,
+    #         pooled_size=(14, 14),
+    #         spatial_scale=1.0 / stride)
+    # rois_align_concat = roi_pool
     # rcnn top feature
     # top_feat = get_resnet_top_feature(roi_pool, units=units, filter_list=filter_list)
     # 删掉res5，直接把roi结果喂到rcnn cla，bbox，mask；
@@ -321,7 +340,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
-        _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
+        # _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
         # print(output_shape)
         
         # fpn classification
@@ -367,6 +386,17 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     # rpn网络的rois
     rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
     rois_concat = mx.symbol.Concat(*rois_list, dim=0)
+    
+
+    # group = mx.symbol.Custom(
+    #     rois=rois_concat,
+    #     P2=conv_fpn_feat['stride4'],
+    #     P3=conv_fpn_feat['stride8'],
+    #     P4=conv_fpn_feat['stride16'],
+    #     P5=conv_fpn_feat['stride32'],
+    #     op_type='assign_rois'
+    #     )
+    # rois_align_concat = group[0]
     # rpn 网络的输出
     # rpn网络loss的weight和target
 
