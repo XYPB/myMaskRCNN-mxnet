@@ -249,16 +249,27 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     rpn_cls_score_concat = mx.symbol.Concat(*rpn_cls_score_list, dim=0, name='rpn_cls_score_concat')
     rpn_cls_output_concat = mx.symbol.Concat(*rpn_cls_prob_list, dim=0, name='rpn_cls_output_concat')
     rpn_bbox_loss_concat = mx.symbol.Concat(*rpn_bbox_loss_list, dim=0, name='rpn_bbox_loss_concat')
-
-    group = mx.symbol.Custom(
-        rois=rois_list_concat,
-        P2=conv_fpn_feat['stride4'],
-        P3=conv_fpn_feat['stride8'],
-        P4=conv_fpn_feat['stride16'],
-        P5=conv_fpn_feat['stride32'],
-        op_type='assign_rois'
-        )
-    rois_align_concat = group[0]
+    
+    _, x1, y1, x2, y2 = mx.symbol.split(rois_list_concat, axis=-1, num_outputs=5)
+    h = y2 - y1 + 1
+    w = x2 - x1 + 1
+    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
+    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
+    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
+    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
+    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
+    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
+    pooled_roi_feats = []
+    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
+        # Pool features with all rois first, and then set invalid pooled features to zero,
+        # at last ele-wise add together to aggregate all features.
+        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_list_concat, (14, 14),
+                                            1. / stride,
+                                            sample_ratio=2)
+        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
+        pooled_roi_feats.append(pooled_feature)
+    # Ele-wise add to aggregate all pooled features
+    rois_align_concat = mx.symbol.ElementWiseSum(*pooled_roi_feats)
 
     # stride = 32
     # roi_pool = mx.symbol.contrib.ROIAlign(
