@@ -1,5 +1,5 @@
 import mxnet as mx
-from . import proposal_target, assign_rois
+from . import proposal_target, assign_rois, proposal_fpn
 
 eps=2e-5
 use_global_stats=True
@@ -340,8 +340,8 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     rpn_conv_bbox_weight = mx.symbol.Variable('rpn_bbox_pred_weight')
     rpn_conv_bbox_bias = mx.symbol.Variable('rpn_bbox_pred_bias')
 
-    rois_pool_list = []
-    rois_list = []
+    rpn_cls_prob_dict = {}
+    rpn_bbox_pred_dict = {}
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
@@ -379,24 +379,46 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
                                                 name="rpn_bbox_pred_stride%s" % stride,
                                                 weight=rpn_conv_bbox_weight,
                                                 bias=rpn_conv_bbox_bias)
+        rpn_cls_prob_dict.update({'cls_prob_stride%s'%stride:rpn_cls_prob_reshape})
+        rpn_bbox_pred_dict.update({'bbox_pred_stride%s'%stride:rpn_bbox_pred})
 
         # rpn proposal
-        rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info, name='rois%s'%stride,
-                                                feature_stride=stride, scales=anchor_scales, ratios=anchor_ratios,
-                                                rpn_pre_nms_top_n=rpn_pre_topk, rpn_post_nms_top_n=rpn_post_topk,
-                                                threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
 
-        # rcnn roi pooling
-        rois_list.append(rois)
-        roi_pool = mx.symbol.contrib.ROIAlign(
-                    name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois,
-                    pooled_size=(14, 14),
-                    spatial_scale=1.0 / stride)
-        rois_pool_list.append(roi_pool)
-
-    # rpn网络的rois
-    rois_align_concat = mx.symbol.Concat(*rois_pool_list, dim=0)
-    rois_concat = mx.symbol.Concat(*rois_list, dim=0)
+    args_dict = {}
+    args_dict.update(rpn_cls_prob_dict)
+    args_dict.update(rpn_bbox_pred_dict)
+    aux_dict = {'im_info':im_info,'name':'rois',
+                'op_type':'proposal_fpn','output_score':False,
+                'feat_stride':RPN_FEAT_STRIDE,'scales':tuple(anchor_scales),
+                'ratios':tuple(anchor_ratios),
+                'rpn_pre_nms_top_n':rpn_pre_topk,
+                'rpn_post_nms_top_n':rpn_post_topk,
+                'threshold':rpn_nms_thresh}
+    args_dict.update(aux_dict)
+    # Proposal
+    rois_concat = mx.symbol.Custom(**args_dict)
+    
+    
+    _, x1, y1, x2, y2 = mx.symbol.split(rois_concat, axis=-1, num_outputs=5)
+    h = y2 - y1 + 1
+    w = x2 - x1 + 1
+    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
+    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
+    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
+    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
+    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
+    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
+    pooled_roi_feats = []
+    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
+        # Pool features with all rois first, and then set invalid pooled features to zero,
+        # at last ele-wise add together to aggregate all features.
+        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_concat, (14, 14),
+                                            1. / stride,
+                                            sample_ratio=2)
+        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
+        pooled_roi_feats.append(pooled_feature)
+    # Ele-wise add to aggregate all pooled features
+    rois_align_concat = mx.symbol.ElementWiseSum(*pooled_roi_feats)
     
 
     # group = mx.symbol.Custom(

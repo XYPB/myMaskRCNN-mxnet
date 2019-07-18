@@ -38,6 +38,8 @@ def sample_rois(rois, gt_boxes, num_classes, rois_per_image, fg_rois_per_image, 
     # select background RoIs as those within [0, FG_THRESH)
     # print('max_overlaps are:\n', max_overlaps)
     bg_indexes = np.where(max_overlaps < fg_overlap)[0]
+    # print(rois)
+    # print(len(fg_indexes), len(bg_indexes), len(rois))
     # print('bg_indexes are :', bg_indexes)
     # compute number of background RoIs to take from this image (guarding against there being fewer than desired)
     bg_rois_this_image = rois_per_image - fg_rois_this_image
@@ -93,8 +95,10 @@ class ProposalTargetOperator(mx.operator.CustomOp):
         labels = np.empty((0, ), dtype=np.float32)
         bbox_targets = np.empty((0, 4 * self._num_classes), dtype=np.float32)
         bbox_weights = np.empty((0, 4 * self._num_classes), dtype=np.float32)
+        # print(self._batch_images)
         for batch_idx in range(self._batch_images):
             b_rois = all_rois[np.where(all_rois[:, 0] == batch_idx)[0]]
+            # print(b_rois)
             b_gt_boxes = all_gt_boxes[batch_idx]
             b_gt_boxes = b_gt_boxes[np.where(b_gt_boxes[:, -1] > 0)[0]]
 
