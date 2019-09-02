@@ -92,31 +92,12 @@ def train_net(sym, roidb, args):
     fpn_cls_stride64_metric = mtrs.RPNLogLossMetricS64()
     fpn_bbox_stride64_metric = mtrs.RPNL1LossMetricS64()
 
-    fpn_stride32_eval_metric = mtrs.RPNAccMetricS32()
-    fpn_cls_stride32_metric = mtrs.RPNLogLossMetricS32()
-    fpn_bbox_stride32_metric = mtrs.RPNL1LossMetricS32()
-
-    fpn_stride16_eval_metric = mtrs.RPNAccMetricS16()
-    fpn_cls_stride16_metric = mtrs.RPNLogLossMetricS16()
-    fpn_bbox_stride16_metric = mtrs.RPNL1LossMetricS16()
-
-    fpn_stride8_eval_metric = mtrs.RPNAccMetricS8()
-    fpn_cls_stride8_metric = mtrs.RPNLogLossMetricS8()
-    fpn_bbox_stride8_metric = mtrs.RPNL1LossMetricS8()
-
-    fpn_stride4_eval_metric = mtrs.RPNAccMetricS4()
-    fpn_cls_stride4_metric = mtrs.RPNLogLossMetricS4()
-    fpn_bbox_stride4_metric = mtrs.RPNL1LossMetricS4()
 
     eval_metric = mtrs.RCNNAccMetric()
     cls_metric = mtrs.RCNNLogLossMetric()
     bbox_metric = mtrs.RCNNL1LossMetric()
     eval_metrics = mtrs.mx.metric.CompositeEvalMetric()
     for child_metric in [fpn_stride64_eval_metric, fpn_cls_stride64_metric, fpn_bbox_stride64_metric,
-                        fpn_stride32_eval_metric, fpn_cls_stride32_metric, fpn_bbox_stride32_metric,
-                        fpn_stride16_eval_metric, fpn_cls_stride16_metric, fpn_bbox_stride16_metric,
-                        fpn_stride8_eval_metric, fpn_cls_stride8_metric, fpn_bbox_stride8_metric,
-                        fpn_stride4_eval_metric, fpn_cls_stride4_metric, fpn_bbox_stride4_metric,
                         eval_metric, cls_metric, bbox_metric]:
         eval_metrics.add(child_metric)
 

@@ -193,6 +193,7 @@ class AnchorLoader(mx.io.DataIter):
         label_list = []
         bbox_target_list = []
         bbox_weight_list = []
+        num_anchors = 3
         # all stacked image share same anchors
         # print(type(self._feat_sym))
         for i, feat_sym in enumerate(self._feat_sym):
