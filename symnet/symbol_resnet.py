@@ -129,25 +129,25 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     fpn_bbox_weights = []
 
     # 训练时需要的参数（train.py label shape name）
-    for stride in RPN_FEAT_STRIDE:
-        l_tmp = mx.symbol.Variable(name='label_stride%s' %stride)
-        l_tmp_reshape = mx.symbol.Reshape(data=l_tmp,
-                                                  shape=(0, 0, -1),
-                                                  name="l_tmp_reshape_stride%s" % stride)
-        fpn_labels.append(l_tmp_reshape)
-        rpn_bbox_gt = mx.symbol.Variable(name='bbox_target_stride%s' %stride)
-        rpn_bbox_gt_reshape = mx.symbol.Reshape(data=rpn_bbox_gt,
-                                                  shape=(0, 0, -1),
-                                                  name="rpn_bbox_gt_reshape_stride%s" % stride)
-        fpn_bbox_targets.append(rpn_bbox_gt_reshape)
-        rpn_bbox_gt_w = mx.symbol.Variable(name='bbox_weight_stride%s' %stride)
-        rpn_bbox_gt_w_reshape = mx.symbol.Reshape(data=rpn_bbox_gt_w,
-                                                  shape=(0, 0, -1),
-                                                  name="rpn_bbox_weights_reshape_stride%s" % stride)
-        fpn_bbox_weights.append(rpn_bbox_gt_w_reshape)
-    fpn_labels = mx.symbol.concat(*fpn_labels, dim=2, name="fpn_labels_concat")
-    fpn_bbox_targets = mx.symbol.concat(*fpn_bbox_targets, dim=2, name="fpn_bbox_targets")
-    fpn_bbox_weights = mx.symbol.concat(*fpn_bbox_weights, dim=2, name="fpn_bbox_weights")
+    # for stride in RPN_FEAT_STRIDE:
+    #     l_tmp = mx.symbol.Variable(name='label_stride%s' %stride)
+    #     l_tmp_reshape = mx.symbol.Reshape(data=l_tmp,
+    #                                               shape=(0, 0, -1),
+    #                                               name="l_tmp_reshape_stride%s" % stride)
+    #     fpn_labels.append(l_tmp_reshape)
+    #     rpn_bbox_gt = mx.symbol.Variable(name='bbox_target_stride%s' %stride)
+    #     rpn_bbox_gt_reshape = mx.symbol.Reshape(data=rpn_bbox_gt,
+    #                                               shape=(0, 0, -1),
+    #                                               name="rpn_bbox_gt_reshape_stride%s" % stride)
+    #     fpn_bbox_targets.append(rpn_bbox_gt_reshape)
+    #     rpn_bbox_gt_w = mx.symbol.Variable(name='bbox_weight_stride%s' %stride)
+    #     rpn_bbox_gt_w_reshape = mx.symbol.Reshape(data=rpn_bbox_gt_w,
+    #                                               shape=(0, 0, -1),
+    #                                               name="rpn_bbox_weights_reshape_stride%s" % stride)
+    #     fpn_bbox_weights.append(rpn_bbox_gt_w_reshape)
+    fpn_labels = mx.symbol.Variable(name='label')
+    fpn_bbox_targets = mx.symbol.Variable(name='bbox_target')
+    fpn_bbox_weights = mx.symbol.Variable(name='bbox_weight')
     
     # rpn_label = mx.symbol.Variable(name='label')
     # rpn_bbox_target = mx.symbol.Variable(name='bbox_target')

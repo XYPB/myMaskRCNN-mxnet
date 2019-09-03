@@ -133,9 +133,10 @@ class AnchorLoader(mx.io.DataIter):
 
         # decide data and label names
         self._data_name = ['data', 'im_info', 'gt_boxes']
-        self._label_name = ['label_stride64', 'label_stride32', 'label_stride16', 'label_stride8', 'label_stride4', 
-                            'bbox_target_stride64', 'bbox_target_stride32', 'bbox_target_stride16', 'bbox_target_stride8', 'bbox_target_stride4', 
-                            'bbox_weight_stride64', 'bbox_weight_stride32', 'bbox_weight_stride16', 'bbox_weight_stride8', 'bbox_weight_stride4', ]
+        self._label_name = ['label',
+                            'bbox_target',
+                            'bbox_weight',
+                            ]
 
         # status variable
         self._cur = 0
@@ -222,7 +223,10 @@ class AnchorLoader(mx.io.DataIter):
             label_list.append(mx.nd.array(tensor_vstack(label, pad=-1)))
             bbox_target_list.append(mx.nd.array(tensor_vstack(bbox_target, pad=0)))
             bbox_weight_list.append(mx.nd.array(tensor_vstack(bbox_weight, pad=0)))
-        self._label = label_list[0], label_list[1], label_list[2], label_list[3], label_list[4], bbox_target_list[0], bbox_target_list[1], bbox_target_list[2], bbox_target_list[3], bbox_target_list[4], bbox_weight_list[0], bbox_weight_list[1], bbox_weight_list[2], bbox_weight_list[3], bbox_weight_list[4]
+        label_list = mx.nd.concat(*[i.reshape((0,-1)) for i in label_list], dim=1)
+        bbox_target_list = mx.nd.concat(*[i.reshape((0,12,-1)) for i in bbox_target_list], dim=2)
+        bbox_weight_list = mx.nd.concat(*[i.reshape((0,12,-1)) for i in bbox_weight_list], dim=2)
+        self._label = label_list, bbox_target_list, bbox_weight_list
         return self._label
 
     def getindex(self):

@@ -49,25 +49,33 @@ def train_net(sym, roidb, args):
 
     # produce shape max possible
     data_names = ['data', 'im_info', 'gt_boxes']
-    label_names = []
     data_shapes = [('data', (batch_size, 3, args.img_long_side, args.img_long_side)),
                     ('im_info', (batch_size, 3)),
                     ('gt_boxes', (batch_size, 100, 5))]
+    label_names = []
     label_shapes = []
+    num_anchors_total = 0
+    fpn_num_anchors = 3
     for lvl in range(5):
         _, out_shape, _ = feat_syms[lvl].infer_shape(data=(1, 3, args.img_long_side, args.img_long_side))
         feat_height, feat_width = out_shape[0][-2:]
+        num_anchors_total += feat_height * feat_width
         # print('train.py 55:\n', out_shape, feat_syms[lvl])
-        fpn_num_anchors = 3
 
-        label_names.append('label_stride' + str(RPN_FEAT_STRIDE[lvl]))
-        label_names.append('bbox_target_stride' + str(RPN_FEAT_STRIDE[lvl]))
-        label_names.append('bbox_weight_stride' + str(RPN_FEAT_STRIDE[lvl]))
+        # label_names.append('label_stride' + str(RPN_FEAT_STRIDE[lvl]))
+        # label_names.append('bbox_target_stride' + str(RPN_FEAT_STRIDE[lvl]))
+        # label_names.append('bbox_weight_stride' + str(RPN_FEAT_STRIDE[lvl]))
 
-        label_shapes.append(('label_stride' + str(RPN_FEAT_STRIDE[lvl]), (batch_size, 1, fpn_num_anchors * feat_height, feat_width)))
-        label_shapes.append(('bbox_target_stride' + str(RPN_FEAT_STRIDE[lvl]), (batch_size, 4 * fpn_num_anchors, feat_height, feat_width)))
-        label_shapes.append(('bbox_weight_stride' + str(RPN_FEAT_STRIDE[lvl]), (batch_size, 4 * fpn_num_anchors, feat_height, feat_width)))
+        # label_shapes.append(('label_stride' + str(RPN_FEAT_STRIDE[lvl]), (batch_size, 1, fpn_num_anchors * feat_height, feat_width)))
+        # label_shapes.append(('bbox_target_stride' + str(RPN_FEAT_STRIDE[lvl]), (batch_size, 4 * fpn_num_anchors, feat_height, feat_width)))
+        # label_shapes.append(('bbox_weight_stride' + str(RPN_FEAT_STRIDE[lvl]), (batch_size, 4 * fpn_num_anchors, feat_height, feat_width)))
 
+    label_names = ['label', 'bbox_target', 'bbox_weight']
+    label_shapes = [
+        ('label', (batch_size, fpn_num_anchors * num_anchors_total)),
+        ('bbox_target', (batch_size, 4 * fpn_num_anchors, num_anchors_total)),
+        ('bbox_weight', (batch_size, 4 * fpn_num_anchors, num_anchors_total)),
+        ]
     # print shapes
     data_shape_dict, out_shape_dict = infer_data_shape(sym, data_shapes + label_shapes)
     logger.info('max input shape\n%s' % pprint.pformat(data_shape_dict))
