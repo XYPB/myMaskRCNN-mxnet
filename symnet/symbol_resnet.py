@@ -68,36 +68,35 @@ def get_resnet_feature(data, units, filter_list):
 
 
 def get_resnet_conv_down(conv_feat):
-    # C5 to P5
+    # C5 to P5, 1x1 dimension reduction to 256
     P5 = mx.symbol.Convolution(data=conv_feat[0], kernel=(1, 1), num_filter=256, name="P5_lateral")
 
-    # P5*2 + C4 = P4
-    P5_up = mx.symbol.UpSampling(P5, scale=2, sample_type="nearest", workspace=512, name='P5_upsampling', num_args=1)
-    P4_la = mx.symbol.Convolution(data=conv_feat[1], kernel=(1, 1), num_filter=256, name='P4_lateral')
-    P5_clip = mx.symbol.Crop(*[P5_up, P4_la], name='P4_clip')
-    P4 = mx.symbol.ElementWiseSum(*[P5_clip, P4_la], name='P4_sum')
-    
-    # P4*2 + C3 = P3
-    P4_up = mx.symbol.UpSampling(P4, scale=2, sample_type="nearest", workspace=512, name='P4_upsampling', num_args=1)
-    P3_la = mx.symbol.Convolution(data=conv_feat[2], kernel=(1, 1), num_filter=256, name='P3_lateral')
-    P4_clip = mx.symbol.Crop(*[P4_up, P3_la], name='P3_clip')
-    P3 = mx.symbol.ElementWiseSum(*[P4_clip, P3_la], name='P3_sum')
-    
-    # P3*2 + C2 = P2
-    P3_up = mx.symbol.UpSampling(P3, scale=2, sample_type="nearest", workspace=512, name='P3_upsampling', num_args=1)
-    P2_la = mx.symbol.Convolution(data=conv_feat[3], kernel=(1, 1), num_filter=256, name='P2_lateral')
-    P3_clip = mx.symbol.Crop(*[P3_up, P2_la], name='P2_clip')
-    P2 = mx.symbol.ElementWiseSum(*[P3_clip, P2_la], name='P2_sum')
-    # P5,P4,P3,P2 aggregate: reduce the aliasing effect of upsampling
-    P5 = mx.symbol.Convolution(data=P5, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P5_aggregate")
-    P4 = mx.symbol.Convolution(data=P4, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P4_aggregate")
-    P3 = mx.symbol.Convolution(data=P3, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P3_aggregate")
-    P2 = mx.symbol.Convolution(data=P2, kernel=(3, 3), pad=(1, 1), num_filter=256, name='P2_aggregate')
-    
-    # P5 /2 = P6
+    # P5 2x upsampling + C4 = P4
+    P5_up   = mx.symbol.UpSampling(P5, scale=2, sample_type='nearest', workspace=512, name='P5_upsampling', num_args=1)
+    P4_la   = mx.symbol.Convolution(data=conv_feat[1], kernel=(1, 1), num_filter=256, name="P4_lateral")
+    P5_clip = mx.symbol.Crop(*[P5_up, P4_la], name="P4_clip")
+    P4      = mx.sym.ElementWiseSum(*[P5_clip, P4_la], name="P4_sum")
+    P4      = mx.symbol.Convolution(data=P4, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P4_aggregate")
+
+    # P4 2x upsampling + C3 = P3
+    P4_up   = mx.symbol.UpSampling(P4, scale=2, sample_type='nearest', workspace=512, name='P4_upsampling', num_args=1)
+    P3_la   = mx.symbol.Convolution(data=conv_feat[2], kernel=(1, 1), num_filter=256, name="P3_lateral")
+    P4_clip = mx.symbol.Crop(*[P4_up, P3_la], name="P3_clip")
+    P3      = mx.sym.ElementWiseSum(*[P4_clip, P3_la], name="P3_sum")
+    P3      = mx.symbol.Convolution(data=P3, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P3_aggregate")
+
+    # P3 2x upsampling + C2 = P2
+    P3_up   = mx.symbol.UpSampling(P3, scale=2, sample_type='nearest', workspace=512, name='P3_upsampling', num_args=1)
+    P2_la   = mx.symbol.Convolution(data=conv_feat[3], kernel=(1, 1), num_filter=256, name="P2_lateral")
+    P3_clip = mx.symbol.Crop(*[P3_up, P2_la], name="P2_clip")
+    P2      = mx.sym.ElementWiseSum(*[P3_clip, P2_la], name="P2_sum")
+    P2      = mx.symbol.Convolution(data=P2, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P2_aggregate")
+
+    # P6 2x subsampling P5
     P6 = mx.symbol.Pooling(data=P5, kernel=(3, 3), stride=(2, 2), pad=(1, 1), pool_type='max', name='P6_subsampling')
 
-    conv_fpn_feat = {"stride64":P6, "stride32":P5, "stride16":P4, "stride8":P3, "stride4":P2}
+    conv_fpn_feat = dict()
+    conv_fpn_feat.update({"stride64":P6, "stride32":P5, "stride16":P4, "stride8":P3, "stride4":P2})
 
     return conv_fpn_feat, [P6, P5, P4, P3, P2]
 

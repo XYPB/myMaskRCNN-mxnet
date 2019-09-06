@@ -13,9 +13,9 @@ def get_names():
     return pred, label
 
 
-class RPNAccMetricS64(mx.metric.EvalMetric):
+class RPNAccMetric(mx.metric.EvalMetric):
     def __init__(self):
-        super(RPNAccMetricS64, self).__init__('RPNAcc_S64')
+        super(RPNAccMetric, self).__init__('RPNAcc')
         self.pred, self.label = get_names()
 
     def update(self, labels, preds):
@@ -58,9 +58,9 @@ class RCNNAccMetric(mx.metric.EvalMetric):
 
 
 
-class RPNLogLossMetricS64(mx.metric.EvalMetric):
+class RPNLogLossMetric(mx.metric.EvalMetric):
     def __init__(self):
-        super(RPNLogLossMetricS64, self).__init__('RPNLogLoss_S64')
+        super(RPNLogLossMetric, self).__init__('RPNLogLoss')
         self.pred, self.label = get_names()
 
     def update(self, labels, preds):
@@ -107,9 +107,9 @@ class RCNNLogLossMetric(mx.metric.EvalMetric):
         self.sum_metric += cls_loss
         self.num_inst += label.shape[0]
 
-class RPNL1LossMetricS64(mx.metric.EvalMetric):
+class RPNL1LossMetric(mx.metric.EvalMetric):
     def __init__(self):
-        super(RPNL1LossMetricS64, self).__init__('RPNL1Loss_S64')
+        super(RPNL1LossMetric, self).__init__('RPNL1Loss')
         self.pred, self.label = get_names()
 
     def update(self, labels, preds):

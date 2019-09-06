@@ -96,21 +96,24 @@ def train_net(sym, roidb, args):
     logger.info('locking params\n%s' % pprint.pformat(fixed_param_names))
 
     # metric
-    fpn_stride64_eval_metric = mtrs.RPNAccMetricS64()
-    fpn_cls_stride64_metric = mtrs.RPNLogLossMetricS64()
-    fpn_bbox_stride64_metric = mtrs.RPNL1LossMetricS64()
+    fpn_eval_metric = mtrs.RPNAccMetric()
+    fpn_cls_metric = mtrs.RPNLogLossMetric()
+    fpn_bbox_metric = mtrs.RPNL1LossMetric()
 
 
     eval_metric = mtrs.RCNNAccMetric()
     cls_metric = mtrs.RCNNLogLossMetric()
     bbox_metric = mtrs.RCNNL1LossMetric()
     eval_metrics = mtrs.mx.metric.CompositeEvalMetric()
-    for child_metric in [fpn_stride64_eval_metric, fpn_cls_stride64_metric, fpn_bbox_stride64_metric,
+    for child_metric in [fpn_eval_metric, fpn_cls_metric, fpn_bbox_metric,
                         eval_metric, cls_metric, bbox_metric]:
         eval_metrics.add(child_metric)
 
     # callback
-    batch_end_callback = mx.callback.Speedometer(batch_size, frequent=args.log_interval, auto_reset=False)
+    batch_end_callback = [
+        mx.callback.Speedometer(batch_size, frequent=args.log_interval, auto_reset=True),
+        mx.contrib.tensorboard.LogMetricsCallback("logs")
+    ]
     epoch_end_callback = mx.callback.do_checkpoint(args.save_prefix)
 
     # learning schedule
@@ -124,7 +127,7 @@ def train_net(sym, roidb, args):
     lr_scheduler = mx.lr_scheduler.MultiFactorScheduler(lr_iters, lr_factor)
     # optimizer
     optimizer_params = {'momentum': 0.9,
-                        'wd': 0.0005,
+                        'wd': 0.0001,
                         'learning_rate': lr,
                         'lr_scheduler': lr_scheduler,
                         'rescale_grad': (1.0 / batch_size),

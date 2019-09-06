@@ -72,7 +72,6 @@ def initialize_frcnn(symbol, data_shapes, arg_params, aux_params):
         arg_params['P{}_lateral_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_lateral_weight'.format(P)])
     for P in range(2, 5):
         arg_params['P{}_aggregate_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_aggregate_weight'.format(P)])
-    arg_params['fc6_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['fc6_weight'])
     return arg_params, aux_params
 
 
