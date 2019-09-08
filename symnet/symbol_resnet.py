@@ -171,6 +171,9 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     bbox_target_list = []
     bbox_weight_list = []
     rpn_cls_score_list = []
+    
+    rpn_cls_prob_dict = {}
+    rpn_bbox_pred_dict = {}
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         # print(i, stride)
         # print(fpn_bbox_targets[i])
@@ -224,14 +227,16 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_pred_list.append(rpn_bbox_pred_reshape)
 
         # rpn proposal
-        rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info, name='rois%s'%stride,
-                                                feature_stride=stride, scales=anchor_scales, ratios=anchor_ratios,
-                                                rpn_pre_nms_top_n=rpn_pre_topk, rpn_post_nms_top_n=rpn_post_topk,
-                                                threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
+        # rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info, name='rois%s'%stride,
+        #                                         feature_stride=stride, scales=anchor_scales, ratios=anchor_ratios,
+        #                                         rpn_pre_nms_top_n=rpn_pre_topk, rpn_post_nms_top_n=rpn_post_topk,
+        #                                         threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
         
-        # rcnn roi proposal target
-        # print(stride)
-        rois_list.append(rois)
+        # # rcnn roi proposal target
+        # # print(stride)
+        # rois_list.append(rois)
+        rpn_cls_prob_dict.update({'cls_prob_stride%s' % stride: rpn_cls_prob_reshape})
+        rpn_bbox_pred_dict.update({'bbox_pred_stride%s' % stride: rpn_bbox_pred})
     
     rpn_cls_score_list = mx.symbol.concat(*rpn_cls_score_list, dim=2, name="rpn_cls_score_list_concat")
 
@@ -250,7 +255,23 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                                                                 data=(rpn_bbox_pred - fpn_bbox_targets))
     rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1 / rpn_batch_rois)
 
-    rois_list_concat = mx.symbol.Concat(*rois_list, dim=0, name='rois_list_concat')
+    
+
+    args_dict = {}
+    args_dict.update(rpn_cls_prob_dict)
+    args_dict.update(rpn_bbox_pred_dict)
+    aux_dict = {'im_info':im_info,'name':'rois',
+                'op_type':'proposal_fpn','output_score':False,
+                'feat_stride':RPN_FEAT_STRIDE,'scales':anchor_scales,
+                'ratios':tuple(anchor_ratios),
+                'rpn_pre_nms_top_n':rpn_pre_topk,
+                'rpn_post_nms_top_n':rpn_post_topk,
+                'threshold':rpn_nms_thresh
+                }
+    args_dict.update(aux_dict)
+    # Proposal
+    rois_list_concat = mx.symbol.Custom(**args_dict)
+
     group = mx.symbol.Custom(rois=rois_list_concat, gt_boxes=gt_boxes, op_type='proposal_target',
                             num_classes=num_classes, batch_images=rcnn_batch_size,
                             batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
@@ -302,12 +323,14 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
-    drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
+    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
+    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
     relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
     cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
-    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat, normalization='batch')
+    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat,
+        normalization='valid', use_ignore=True, ignore_label=-1,
+    )
 
     # rcnn bbox regression
     bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
@@ -458,8 +481,8 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
-    drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
+    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
+    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
     relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
     cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
