@@ -328,9 +328,8 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
     cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
-    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat,
-        normalization='valid', use_ignore=True, ignore_label=-1,
-    )
+    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat, normalization='batch')
+
 
     # rcnn bbox regression
     bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)

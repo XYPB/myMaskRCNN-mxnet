@@ -70,7 +70,7 @@ def sample_rois(rois, gt_boxes, num_classes, rois_per_image, fg_rois_per_image, 
         cls_ind = int(labels[i])
         bbox_targets[i, cls_ind * 4:(cls_ind + 1) * 4] = targets[i]
         bbox_weights[i, cls_ind * 4:(cls_ind + 1) * 4] = 1
-
+    print(rois, labels, bbox_targets, bbox_weights)
     return rois, labels, bbox_targets, bbox_weights
 
 
