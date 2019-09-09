@@ -168,7 +168,7 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=100, help='logging mini batch interval')
     parser.add_argument('--save-prefix', type=str, default='', help='saving params prefix')
     # faster rcnn params
-    parser.add_argument('--img-short-side', type=int, default=800)
+    parser.add_argument('--img-short-side', type=int, default=600)
     parser.add_argument('--img-long-side', type=int, default=1000)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
@@ -215,7 +215,7 @@ def get_voc(args):
     for iset in isets:
         imdb = PascalVOC(iset, '../../data', '../../data/VOCdevkit')
         imdb.filter_roidb()
-        imdb.append_flipped_images()
+        # imdb.append_flipped_images()
         roidb.extend(imdb.roidb)
     return roidb
 
@@ -231,7 +231,7 @@ def get_coco(args):
     for iset in isets:
         imdb = coco(iset, 'data', 'data/coco')
         imdb.filter_roidb()
-        imdb.append_flipped_images()
+        # imdb.append_flipped_images()
         roidb.extend(imdb.roidb)
     return roidb
 

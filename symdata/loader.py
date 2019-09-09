@@ -178,7 +178,7 @@ class AnchorLoader(mx.io.DataIter):
         im_tensor, im_info, gt_boxes = [], [], []
         for index in indices:
             roi_rec = self._roidb[index]
-            b_im_tensor, b_im_info, b_gt_boxes = get_image(roi_rec, np.random.randint(640, 800), self._max_size, self._mean, self._std)
+            b_im_tensor, b_im_info, b_gt_boxes = get_image(roi_rec, self._short, self._max_size, self._mean, self._std)
             im_tensor.append(b_im_tensor)
             im_info.append(b_im_info)
             gt_boxes.append(b_gt_boxes)

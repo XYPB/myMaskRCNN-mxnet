@@ -117,9 +117,8 @@ class ProposalFPNOperator(mx.operator.CustomOp):
 
     def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
         # forward only currently
-        self.assign(in_grad[0], req[0], 0)
-        self.assign(in_grad[1], req[1], 0)
-        self.assign(in_grad[2], req[2], 0)
+        for i in range(len(in_grad)):
+            self.assign(in_grad[i], req[i], 0)
 
     @staticmethod
     def _filter_boxes(boxes, min_size):
