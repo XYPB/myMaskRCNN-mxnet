@@ -82,7 +82,7 @@ def parse_args():
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
     parser.add_argument('--gpu', type=int, default=0, help='gpu device eg. 0')
     # faster rcnn params
-    parser.add_argument('--img-short-side', type=int, default=800)
+    parser.add_argument('--img-short-side', type=int, default=600)
     parser.add_argument('--img-long-side', type=int, default=1000)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
@@ -160,7 +160,7 @@ def get_resnet50_test(args):
                            rpn_min_size=args.rpn_min_size,
                            num_classes=args.rcnn_num_classes, rcnn_feature_stride=args.rcnn_feat_stride,
                            rcnn_pooled_size=args.rcnn_pooled_size, rcnn_batch_size=args.rcnn_batch_size,
-                           units=(3, 4, 6, 3), filter_list=(256, 512, 1024, 2048))
+                           units=(3, 4, 6, 3), filter_list=[64, 256, 512, 1024, 2048])
 
 
 def get_resnet101_test(args):
@@ -178,7 +178,7 @@ def get_resnet101_test(args):
                            rpn_min_size=args.rpn_min_size,
                            num_classes=args.rcnn_num_classes, rcnn_feature_stride=args.rcnn_feat_stride,
                            rcnn_pooled_size=args.rcnn_pooled_size, rcnn_batch_size=args.rcnn_batch_size,
-                           units=(3, 4, 23, 3), filter_list=(256, 512, 1024, 2048))
+                           units=(3, 4, 23, 3), filter_list=[64, 256, 512, 1024, 2048])
 
 
 def get_dataset(dataset, args):

@@ -1,70 +1,88 @@
 import mxnet as mx
 from . import proposal_target, assign_rois, proposal_fpn
 
-eps=2e-5
+eps=1e-5
 use_global_stats=True
 workspace = 1024
 RPN_FEAT_STRIDE = [64, 32, 16, 8, 4]
 # RCNN_FEAT_STRIDE = [32, 16, 8, 4]
 
-
-def residual_unit(data, num_filter, stride, dim_match, name):
-    bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name=name + '_bn1')
-    act1 = mx.sym.Activation(data=bn1, act_type='relu', name=name + '_relu1')
-    conv1 = mx.sym.Convolution(data=act1, num_filter=int(num_filter * 0.25), kernel=(1, 1), stride=(1, 1), pad=(0, 0),
+def residual_unit(data, num_filter, stride, dim_match, name, bottle_neck=True, bn_mom=0.9, workspace=256, memonger=False):
+    """Return ResNet Unit symbol for building ResNet
+    Parameters
+    ----------
+    data : str
+        Input data
+    num_filter : int
+        Number of output channels
+    bnf : int
+        Bottle neck channels factor with regard to num_filter
+    stride : tuple
+        Stride used in convolution
+    dim_match : Boolean
+        True means channel number between input and output is the same, otherwise means differ
+    name : str
+        Base name of the operators
+    workspace : int
+        Workspace used in convolution operator
+    """
+    conv1 = mx.sym.Convolution(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=stride, pad=(0,0),
                                 no_bias=True, workspace=workspace, name=name + '_conv1')
-    bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name=name + '_bn2')
-    act2 = mx.sym.Activation(data=bn2, act_type='relu', name=name + '_relu2')
-    conv2 = mx.sym.Convolution(data=act2, num_filter=int(num_filter * 0.25), kernel=(3, 3), stride=stride, pad=(1, 1),
+    bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1')
+    act1 = mx.sym.Activation(data=bn1, act_type='relu', name=name + '_relu1')
+    conv2 = mx.sym.Convolution(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                 no_bias=True, workspace=workspace, name=name + '_conv2')
-    bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name=name + '_bn3')
-    act3 = mx.sym.Activation(data=bn3, act_type='relu', name=name + '_relu3')
-    conv3 = mx.sym.Convolution(data=act3, num_filter=num_filter, kernel=(1, 1), stride=(1, 1), pad=(0, 0), no_bias=True,
+    bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn2')
+    act2 = mx.sym.Activation(data=bn2, act_type='relu', name=name + '_relu2')
+    conv3 = mx.sym.Convolution(data=act2, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0), no_bias=True,
                                 workspace=workspace, name=name + '_conv3')
+    bn3 = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn3')
+
     if dim_match:
         shortcut = data
     else:
-        shortcut = mx.sym.Convolution(data=act1, num_filter=num_filter, kernel=(1, 1), stride=stride, no_bias=True,
-                                        workspace=workspace, name=name + '_sc')
-    sum = mx.sym.ElementWiseSum(*[conv3, shortcut], name=name + '_plus')
-    return sum
+        conv1sc = mx.sym.Convolution(data=data, num_filter=num_filter, kernel=(1,1), stride=stride, no_bias=True,
+                                        workspace=workspace, name=name+'_downsample_0')
+        shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_downsample_1')
+    if memonger:
+        shortcut._set_attr(mirror_stage='True')
+    return mx.sym.Activation(data=bn3 + shortcut, act_type='relu', name=name + '_relu3')
 
 
 def get_resnet_feature(data, units, filter_list):
-    # res1
-    data_bn = mx.sym.BatchNorm(data=data, fix_gamma=True, eps=eps, use_global_stats=use_global_stats, name='bn_data')
-    conv0 = mx.sym.Convolution(data=data_bn, num_filter=64, kernel=(7, 7), stride=(2, 2), pad=(3, 3),
-                                no_bias=True, name="conv0", workspace=workspace)
-    bn0 = mx.sym.BatchNorm(data=conv0, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name='bn0')
-    relu0 = mx.sym.Activation(data=bn0, act_type='relu', name='relu0')
-    pool0 = mx.symbol.Pooling(data=relu0, kernel=(3, 3), stride=(2, 2), pad=(1, 1), pool_type='max', name='pool0')
+    """Return ResNet symbol of
+    Parameters
+    ----------
+    units : list
+        Number of units in each stage
+    num_stages : int
+        Number of stage
+    filter_list : list
+        Channel size of each stage
+    num_classes : int
+        Ouput size of symbol
+    dataset : str
+        Dataset type, only cifar10 and imagenet supports
+    workspace : int
+        Workspace used in convolution operator
+    dtype : str
+        Precision (float32 or float16)
+    """
+    body = mx.sym.Convolution(data=data, num_filter=filter_list[0], kernel=(7, 7), stride=(2,2), pad=(3, 3),
+                                no_bias=True, name="conv1", workspace=workspace)
+    body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=eps, name='bn1')
+    body = mx.sym.Activation(data=body, act_type='relu', name='relu1')
+    body = mx.sym.Pooling(data=body, kernel=(3, 3), stride=(2,2), pad=(1,1), pool_type='max')
 
-    # res2
-    unit = residual_unit(data=pool0, num_filter=filter_list[0], stride=(1, 1), dim_match=False, name='stage1_unit1')
-    for i in range(2, units[0] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[0], stride=(1, 1), dim_match=True, name='stage1_unit%s' % i)
-    conv_C2 = unit
-
-    # res3
-    unit = residual_unit(data=unit, num_filter=filter_list[1], stride=(2, 2), dim_match=False, name='stage2_unit1')
-    for i in range(2, units[1] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[1], stride=(1, 1), dim_match=True, name='stage2_unit%s' % i)
-    conv_C3 = unit
-
-    # res4
-    unit = residual_unit(data=unit, num_filter=filter_list[2], stride=(2, 2), dim_match=False, name='stage3_unit1')
-    for i in range(2, units[2] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[2], stride=(1, 1), dim_match=True, name='stage3_unit%s' % i)
-    conv_C4 = unit
-
-    # res5
-    unit = residual_unit(data=unit, num_filter=filter_list[3], stride=(2, 2), dim_match=False, name='stage4_unit1')
-    for i in range(2, units[3] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[3], stride=(1, 1), dim_match=True, name='stage4_unit%s' % i)
-    conv_C5 = unit
-
-    conv_feat = [conv_C5, conv_C4, conv_C3, conv_C2]
-    return conv_feat
+    conv_feat = []
+    for i in range(len(units)):
+        body = residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
+                             name='layer%d_%d' % (i + 1, 0), workspace=workspace)
+        for j in range(units[i]-1):
+            body = residual_unit(body, filter_list[i+1], (1,1), True, name='layer%d_%d' % (i + 1, j + 1),
+                                 workspace=workspace)
+        conv_feat.append(body)
+    return conv_feat[::-1]
 
 
 def get_resnet_conv_down(conv_feat):
@@ -118,6 +136,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                     units, filter_list):
     anchor_scales = (8,)
     num_anchors = 3
+    rpn_min_size = [64, 32, 16, 8, 4]
 
     data = mx.symbol.Variable(name="data")
     im_info = mx.symbol.Variable(name="im_info")
@@ -227,7 +246,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info, name='rois%s'%stride,
                                                 feature_stride=stride, scales=anchor_scales, ratios=anchor_ratios,
                                                 rpn_pre_nms_top_n=rpn_pre_topk, rpn_post_nms_top_n=rpn_post_topk,
-                                                threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
+                                                threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size[i])
         
         # rcnn roi proposal target
         # print(stride)
@@ -302,15 +321,15 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
-    drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
-    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
+    # fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
+    # relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
-    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
+    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu6, num_hidden=num_classes)
     cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat, normalization='batch')
 
     # rcnn bbox regression
-    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
+    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu6, num_hidden=num_classes * 4)
     bbox_loss_ = bbox_weight_concat * mx.symbol.smooth_l1(name='bbox_loss_', scalar=1.0, data=(bbox_pred - bbox_target_concat))
     bbox_loss = mx.sym.MakeLoss(name='bbox_loss', data=bbox_loss_, grad_scale=1.0 / rcnn_batch_rois)
 
@@ -458,15 +477,15 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
-    drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
-    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
+    # fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
+    # relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
-    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
+    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu6, num_hidden=num_classes)
     cls_prob = mx.symbol.softmax(name='cls_prob', data=cls_score)
 
     # rcnn bbox regression
-    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
+    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu6, num_hidden=num_classes * 4)
 
     # reshape output
     cls_prob = mx.symbol.Reshape(data=cls_prob, shape=(rcnn_batch_size, -1, num_classes), name='cls_prob_reshape')

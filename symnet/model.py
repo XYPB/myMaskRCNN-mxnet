@@ -8,12 +8,20 @@ def load_param(params, ctx=None):
     save_dict = mx.nd.load(params)
     arg_params = {}
     aux_params = {}
+    print(sorted(save_dict.keys()))
     for k, v in save_dict.items():
-        tp, name = k.split(':', 1)
-        if tp == 'arg':
-            arg_params[name] = v.as_in_context(ctx)
-        if tp == 'aux':
-            aux_params[name] = v.as_in_context(ctx)
+        if ':' in k:
+            tp, name = k.split(':', 1)
+            if tp == 'arg':
+                arg_params[name] = v.as_in_context(ctx)
+            if tp == 'aux':
+                aux_params[name] = v.as_in_context(ctx)
+        else:
+            k = k.replace("running", "moving").replace(".", "_")
+            if k.endswith("moving_mean") or k.endswith("moving_var"):
+                aux_params[k] = v.as_in_context(ctx)
+            else:
+                arg_params[k] = v.as_in_context(ctx)
     return arg_params, aux_params
 
 

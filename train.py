@@ -168,7 +168,7 @@ def parse_args():
     parser.add_argument('--log-interval', type=int, default=100, help='logging mini batch interval')
     parser.add_argument('--save-prefix', type=str, default='', help='saving params prefix')
     # faster rcnn params
-    parser.add_argument('--img-short-side', type=int, default=800)
+    parser.add_argument('--img-short-side', type=int, default=600)
     parser.add_argument('--img-long-side', type=int, default=1000)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
@@ -176,8 +176,8 @@ def parse_args():
     parser.add_argument('--rpn-feat-stride', type=int, default='64')
     parser.add_argument('--rpn-anchor-scales', type=str, default='(8,)')
     parser.add_argument('--rpn-anchor-ratios', type=str, default='(0.5, 1, 2)')
-    parser.add_argument('--rpn-pre-nms-topk', type=int, default=2000)
-    parser.add_argument('--rpn-post-nms-topk', type=int, default=1200)
+    parser.add_argument('--rpn-pre-nms-topk', type=int, default=12000)
+    parser.add_argument('--rpn-post-nms-topk', type=int, default=2000)
     parser.add_argument('--rpn-nms-thresh', type=float, default=0.7)
     parser.add_argument('--rpn-min-size', type=int, default=16)
     parser.add_argument('--rpn-batch-rois', type=int, default=256)
@@ -215,7 +215,7 @@ def get_voc(args):
     for iset in isets:
         imdb = PascalVOC(iset, '../../data', '../../data/VOCdevkit')
         imdb.filter_roidb()
-        imdb.append_flipped_images()
+        # imdb.append_flipped_images()
         roidb.extend(imdb.roidb)
     return roidb
 
@@ -231,7 +231,7 @@ def get_coco(args):
     for iset in isets:
         imdb = coco(iset, 'data', 'data/coco')
         imdb.filter_roidb()
-        imdb.append_flipped_images()
+        # imdb.append_flipped_images()
         roidb.extend(imdb.roidb)
     return roidb
 
@@ -278,7 +278,7 @@ def get_resnet50_train(args):
                             rcnn_pooled_size=args.rcnn_pooled_size, rcnn_batch_size=args.rcnn_batch_size,
                             rcnn_batch_rois=args.rcnn_batch_rois, rcnn_fg_fraction=args.rcnn_fg_fraction,
                             rcnn_fg_overlap=args.rcnn_fg_overlap, rcnn_bbox_stds=args.rcnn_bbox_stds,
-                            units=(3, 4, 6, 3), filter_list=(256, 512, 1024, 2048))
+                            units=(3, 4, 6, 3), filter_list=[64, 256, 512, 1024, 2048])
 
 
 def get_resnet101_train(args):
@@ -301,7 +301,7 @@ def get_resnet101_train(args):
                             rcnn_pooled_size=args.rcnn_pooled_size, rcnn_batch_size=args.rcnn_batch_size,
                             rcnn_batch_rois=args.rcnn_batch_rois, rcnn_fg_fraction=args.rcnn_fg_fraction,
                             rcnn_fg_overlap=args.rcnn_fg_overlap, rcnn_bbox_stds=args.rcnn_bbox_stds,
-                            units=(3, 4, 23, 3), filter_list=(256, 512, 1024, 2048))
+                            units=(3, 4, 23, 3), filter_list=[64, 256, 512, 1024, 2048])
 
 
 def get_dataset(dataset, args):
