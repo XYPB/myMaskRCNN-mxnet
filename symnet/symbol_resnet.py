@@ -68,32 +68,53 @@ def get_resnet_feature(data, units, filter_list):
 
 
 def get_resnet_conv_down(conv_feat):
-    # C5 to P5, 1x1 dimension reduction to 256
-    P5 = mx.symbol.Convolution(data=conv_feat[0], kernel=(1, 1), num_filter=256, name="P5_lateral")
 
-    # P5 2x upsampling + C4 = P4
-    P5_up   = mx.symbol.UpSampling(P5, scale=2, sample_type='nearest', workspace=512, name='P5_upsampling', num_args=1)
-    P4_la   = mx.symbol.Convolution(data=conv_feat[1], kernel=(1, 1), num_filter=256, name="P4_lateral")
-    P5_clip = mx.symbol.Crop(*[P5_up, P4_la], name="P4_clip")
-    P4      = mx.sym.ElementWiseSum(*[P5_clip, P4_la], name="P4_sum")
-    P4      = mx.symbol.Convolution(data=P4, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P4_aggregate")
+    # e.g. For ResNet50, the feature is :
+    # outputs = ['stage1_activation2', 'stage2_activation3',
+    #            'stage3_activation5', 'stage4_activation2']
+    # with regard to [conv2, conv3, conv4, conv5] -> [C2, C3, C4, C5]
+    # append more layers with reversed order : [P5, P4, P3, P2]
+    y = conv_feat[0]
+    base_features = conv_feat
+    num_filters = [256, 256, 256, 256]
+    num_stages = len(num_filters) + 1  # usually 5
+    weight_init = mx.init.Xavier(rnd_type='gaussian', factor_type='out', magnitude=2.)
+    tmp_outputs = []
+    # num_filter is 256 in ori paper
+    for i, (bf, f) in enumerate(zip(base_features, num_filters)):
+        if i == 0:
+            y = mx.sym.Convolution(y, num_filter=f, kernel=(1, 1), pad=(0, 0),
+                                    stride=(1, 1), no_bias=False,
+                                    name="P{}_conv_lat".format(num_stages - i),
+                                    attr={'__init__': weight_init})
+            
+            y_p6 = mx.sym.Convolution(y, num_filter=f, kernel=(3, 3), pad=(1, 1),
+                                        stride=(2, 2), no_bias=False,
+                                        name='P{}_conv1'.format(num_stages + 1),
+                                        attr={'__init__': weight_init})
+        else:
+            bf = mx.sym.Convolution(bf, num_filter=f, kernel=(1, 1), pad=(0, 0),
+                                    stride=(1, 1), no_bias=False,
+                                    name="P{}_conv_lat".format(num_stages - i),
+                                    attr={'__init__': weight_init})
+            y = mx.sym.UpSampling(y, scale=2, sample_type='nearest',
+                                    name="P{}_upsp".format(num_stages - i))
 
-    # P4 2x upsampling + C3 = P3
-    P4_up   = mx.symbol.UpSampling(P4, scale=2, sample_type='nearest', workspace=512, name='P4_upsampling', num_args=1)
-    P3_la   = mx.symbol.Convolution(data=conv_feat[2], kernel=(1, 1), num_filter=256, name="P3_lateral")
-    P4_clip = mx.symbol.Crop(*[P4_up, P3_la], name="P3_clip")
-    P3      = mx.sym.ElementWiseSum(*[P4_clip, P3_la], name="P3_sum")
-    P3      = mx.symbol.Convolution(data=P3, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P3_aggregate")
-
-    # P3 2x upsampling + C2 = P2
-    P3_up   = mx.symbol.UpSampling(P3, scale=2, sample_type='nearest', workspace=512, name='P3_upsampling', num_args=1)
-    P2_la   = mx.symbol.Convolution(data=conv_feat[3], kernel=(1, 1), num_filter=256, name="P2_lateral")
-    P3_clip = mx.symbol.Crop(*[P3_up, P2_la], name="P2_clip")
-    P2      = mx.sym.ElementWiseSum(*[P3_clip, P2_la], name="P2_sum")
-    P2      = mx.symbol.Convolution(data=P2, kernel=(3, 3), pad=(1, 1), num_filter=256, name="P2_aggregate")
-
-    # P6 2x subsampling P5
-    P6 = mx.symbol.Pooling(data=P5, kernel=(3, 3), stride=(2, 2), pad=(1, 1), pool_type='max', name='P6_subsampling')
+            # make two symbol alignment
+            # method 1 : mx.sym.Crop
+            # y = mx.sym.Crop(*[y, bf], name="P{}_clip".format(num_stages-i))
+            # method 2 : mx.sym.slice_like
+            y = mx.sym.slice_like(y, bf * 0, axes=(2, 3),
+                                    name="P{}_clip".format(num_stages - i))
+            y = mx.sym.ElementWiseSum(bf, y, name="P{}_sum".format(num_stages - i))
+        # Reduce the aliasing effect of upsampling described in ori paper
+        out = mx.sym.Convolution(y, num_filter=f, kernel=(3, 3), pad=(1, 1), stride=(1, 1),
+                                    no_bias=False, name='P{}_conv1'.format(num_stages - i),
+                                    attr={'__init__': weight_init})
+        
+        tmp_outputs.append(out)
+    P2, P3, P4, P5 = tuple(tmp_outputs[::-1])
+    P6 = y_p6
 
     conv_fpn_feat = dict()
     conv_fpn_feat.update({"stride64":P6, "stride32":P5, "stride16":P4, "stride8":P3, "stride4":P2})
