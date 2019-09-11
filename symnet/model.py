@@ -77,9 +77,9 @@ def initialize_frcnn(symbol, data_shapes, arg_params, aux_params):
     arg_params['cls_score_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['cls_score_weight'])
     arg_params['bbox_pred_weight'] = mx.random.normal(0, 0.001, shape=arg_shape_dict['bbox_pred_weight'])
     for P in range(2, 6):
-        arg_params['P{}_lateral_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_lateral_weight'.format(P)])
+        arg_params['P{}_conv_lat_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_conv_lat_weight'.format(P)])
     for P in range(2, 5):
-        arg_params['P{}_aggregate_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_aggregate_weight'.format(P)])
+        arg_params['P{}_conv1_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_conv1_weight'.format(P)])
     return arg_params, aux_params
 
 
