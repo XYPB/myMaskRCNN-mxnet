@@ -28,22 +28,22 @@ def residual_unit(data, num_filter, stride, dim_match, name, bottle_neck=True, b
     """
     conv1 = mx.sym.Convolution(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=stride, pad=(0,0),
                                 no_bias=True, workspace=workspace, name=name + '_conv1')
-    bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1')
+    bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1', use_global_stats=use_global_stats)
     act1 = mx.sym.Activation(data=bn1, act_type='relu', name=name + '_relu1')
     conv2 = mx.sym.Convolution(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                 no_bias=True, workspace=workspace, name=name + '_conv2')
-    bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn2')
+    bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn2', use_global_stats=use_global_stats)
     act2 = mx.sym.Activation(data=bn2, act_type='relu', name=name + '_relu2')
     conv3 = mx.sym.Convolution(data=act2, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0), no_bias=True,
                                 workspace=workspace, name=name + '_conv3')
-    bn3 = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn3')
+    bn3 = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn3', use_global_stats=use_global_stats)
 
     if dim_match:
         shortcut = data
     else:
         conv1sc = mx.sym.Convolution(data=data, num_filter=num_filter, kernel=(1,1), stride=stride, no_bias=True,
                                         workspace=workspace, name=name+'_downsample_0')
-        shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_downsample_1')
+        shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_downsample_1', use_global_stats=use_global_stats)
     if memonger:
         shortcut._set_attr(mirror_stage='True')
     return mx.sym.Activation(data=bn3 + shortcut, act_type='relu', name=name + '_relu3')
@@ -70,7 +70,7 @@ def get_resnet_feature(data, units, filter_list):
     """
     body = mx.sym.Convolution(data=data, num_filter=filter_list[0], kernel=(7, 7), stride=(2,2), pad=(3, 3),
                                 no_bias=True, name="conv1", workspace=workspace)
-    body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=eps, name='bn1')
+    body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=eps, name='bn1', use_global_stats=use_global_stats)
     body = mx.sym.Activation(data=body, act_type='relu', name='relu1')
     body = mx.sym.Pooling(data=body, kernel=(3, 3), stride=(2,2), pad=(1,1), pool_type='max')
 
@@ -117,16 +117,6 @@ def get_resnet_conv_down(conv_feat):
     conv_fpn_feat.update({"stride64":P6, "stride32":P5, "stride16":P4, "stride8":P3, "stride4":P2})
 
     return conv_fpn_feat, [P6, P5, P4, P3, P2]
-
-
-def get_resnet_top_feature(data, units, filter_list):
-    unit = residual_unit(data=data, num_filter=filter_list[3], stride=(2, 2), dim_match=False, name='stage4_unit1')
-    for i in range(2, units[3] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[3], stride=(1, 1), dim_match=True, name='stage4_unit%s' % i)
-    bn1 = mx.sym.BatchNorm(data=unit, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name='bn1')
-    relu1 = mx.sym.Activation(data=bn1, act_type='relu', name='relu1')
-    pool1 = mx.symbol.Pooling(data=relu1, global_pool=True, kernel=(7, 7), pool_type='avg', name='pool1')
-    return pool1
 
 
 def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,

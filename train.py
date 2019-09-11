@@ -127,11 +127,11 @@ def train_net(sym, roidb, args):
     lr_scheduler = mx.lr_scheduler.MultiFactorScheduler(lr_iters, lr_factor)
     # optimizer
     optimizer_params = {'momentum': 0.9,
-                        'wd': 0.0001,
+                        'wd': 5e-4,
                         'learning_rate': lr,
                         'lr_scheduler': lr_scheduler,
                         'rescale_grad': (1.0 / batch_size),
-                        'clip_gradient': 5}
+                        'clip_gradient': 4.14}
 
     # train
 
