@@ -82,7 +82,7 @@ def parse_args():
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
     parser.add_argument('--gpu', type=int, default=0, help='gpu device eg. 0')
     # faster rcnn params
-    parser.add_argument('--img-short-side', type=int, default=800)
+    parser.add_argument('--img-short-side', type=int, default=600)
     parser.add_argument('--img-long-side', type=int, default=1000)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
