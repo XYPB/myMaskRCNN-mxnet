@@ -183,13 +183,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     conv_feat = get_resnet_feature(data, units=units, filter_list=filter_list)
     conv_fpn_feat, _ = get_resnet_conv_down(conv_feat)
 
-    rpn_conv_weight = mx.symbol.Variable('rpn_conv_3x3_weight')
-    rpn_conv_bias = mx.symbol.Variable('rpn_conv_3x3_bias')
-    rpn_conv_cls_weight = mx.symbol.Variable('rpn_cls_score_weight')
-    rpn_conv_cls_bias = mx.symbol.Variable('rpn_cls_score_bias')
-    rpn_conv_bbox_weight = mx.symbol.Variable('rpn_bbox_pred_weight')
-    rpn_conv_bbox_bias = mx.symbol.Variable('rpn_bbox_pred_bias')
-
     rois_pool_list = []
     rois_list = []
     rpn_bbox_pred_list = []
@@ -205,9 +198,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         # print(conv_fpn_feat['stride%s' % stride].infer_shape(data=(2, 3, 1000, 1000)))
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
-                                        num_filter=512,
-                                        weight=rpn_conv_weight,
-                                        bias=rpn_conv_bias)
+                                        num_filter=1024)
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
@@ -219,9 +210,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_cls_score = mx.symbol.Convolution(data=rpn_relu,
                                                 kernel=(1, 1), pad=(0, 0),
                                                 num_filter=2 * num_anchors,
-                                                name="rpn_cls_score_stride%s" % stride,
-                                                weight=rpn_conv_cls_weight,
-                                                bias=rpn_conv_cls_bias)
+                                                name="rpn_cls_score_stride%s" % stride)
         rpn_cls_score_reshape = mx.symbol.Reshape(data=rpn_cls_score,
                                                     shape=(0, 2, -1),
                                                     name="rpn_cls_score_reshape%s" %stride)
@@ -240,9 +229,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_pred = mx.symbol.Convolution(data=rpn_relu,
                                                 kernel=(1, 1), pad=(0, 0),
                                                 num_filter=4 * num_anchors,
-                                                name="rpn_bbox_pred_stride%s" % stride,
-                                                weight=rpn_conv_bbox_weight,
-                                                bias=rpn_conv_bbox_bias)
+                                                name="rpn_bbox_pred_stride%s" % stride)
         
         rpn_bbox_pred_reshape = mx.symbol.Reshape(data=rpn_bbox_pred,
                                                   shape=(0, 0, -1),
@@ -330,14 +317,14 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    # fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
-    # relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
+    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
-    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu6, num_hidden=num_classes)
+    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
     cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat, normalization='batch')
 
     # rcnn bbox regression
-    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu6, num_hidden=num_classes * 4)
+    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
     bbox_loss_ = bbox_weight_concat * mx.symbol.smooth_l1(name='bbox_loss_', scalar=1.0, data=(bbox_pred - bbox_target_concat))
     bbox_loss = mx.sym.MakeLoss(name='bbox_loss', data=bbox_loss_, grad_scale=1.0 / rcnn_batch_rois)
 
@@ -375,21 +362,12 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     conv_feat = get_resnet_feature(data, units=units, filter_list=filter_list)
     conv_fpn_feat, _ = get_resnet_conv_down(conv_feat)
 
-    rpn_conv_weight = mx.symbol.Variable('rpn_conv_3x3_weight')
-    rpn_conv_bias = mx.symbol.Variable('rpn_conv_3x3_bias')
-    rpn_conv_cls_weight = mx.symbol.Variable('rpn_cls_score_weight')
-    rpn_conv_cls_bias = mx.symbol.Variable('rpn_cls_score_bias')
-    rpn_conv_bbox_weight = mx.symbol.Variable('rpn_bbox_pred_weight')
-    rpn_conv_bbox_bias = mx.symbol.Variable('rpn_bbox_pred_bias')
-
     rpn_cls_prob_dict = {}
     rpn_bbox_pred_dict = {}
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
-                                        num_filter=512,
-                                        weight=rpn_conv_weight,
-                                        bias=rpn_conv_bias)
+                                        num_filter=1024)
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
@@ -401,9 +379,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_cls_score = mx.symbol.Convolution(data=rpn_relu,
                                                 kernel=(1, 1), pad=(0, 0),
                                                 num_filter=2 * num_anchors,
-                                                name="rpn_cls_score_stride%s" % stride,
-                                                weight=rpn_conv_cls_weight,
-                                                bias=rpn_conv_cls_bias)
+                                                name="rpn_cls_score_stride%s" % stride)
         rpn_cls_score_reshape = mx.symbol.Reshape(data=rpn_cls_score,
                                                     shape=(0, 2, -1, 0),
                                                     name="rpn_cls_score_reshape%s" %stride)
@@ -418,9 +394,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_pred = mx.symbol.Convolution(data=rpn_relu,
                                                 kernel=(1, 1), pad=(0, 0),
                                                 num_filter=4 * num_anchors,
-                                                name="rpn_bbox_pred_stride%s" % stride,
-                                                weight=rpn_conv_bbox_weight,
-                                                bias=rpn_conv_bbox_bias)
+                                                name="rpn_bbox_pred_stride%s" % stride)
         rpn_cls_prob_dict.update({'cls_prob_stride%s'%stride:rpn_cls_prob_reshape})
         rpn_bbox_pred_dict.update({'bbox_pred_stride%s'%stride:rpn_bbox_pred})
 
@@ -486,14 +460,14 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    # fc7 = mx.symbol.FullyConnected(data=drop6, num_hidden=1024, name='fc7')
-    # relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
+    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
-    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu6, num_hidden=num_classes)
+    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
     cls_prob = mx.symbol.softmax(name='cls_prob', data=cls_score)
 
     # rcnn bbox regression
-    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu6, num_hidden=num_classes * 4)
+    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
 
     # reshape output
     cls_prob = mx.symbol.Reshape(data=cls_prob, shape=(rcnn_batch_size, -1, num_classes), name='cls_prob_reshape')
