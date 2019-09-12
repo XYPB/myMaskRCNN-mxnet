@@ -52,7 +52,7 @@ def check_shape(symbol, data_shapes, arg_params, aux_params):
                 arg_params[k] = mx.nd.zeros(shape=arg_shape_dict[k])
             else:
                 print("{} not initialized. Initiaizing with normal.".format(k))
-                arg_params[k] = mx.random.normal(0, 0.001, shape=arg_shape_dict[k])
+                arg_params[k] = mx.random.normal(0, 0.01 if 'rpn' in k else 0.001, shape=arg_shape_dict[k])
         if arg_params[k].shape != arg_shape_dict[k]:
             if k.split('_')[-1] == 'bias':
                 print("{} shape inconsistent. Initiaizing with 0.".format(k))
@@ -71,11 +71,6 @@ def check_shape(symbol, data_shapes, arg_params, aux_params):
 
 def initialize_frcnn(symbol, data_shapes, arg_params, aux_params):
     arg_shape_dict, aux_shape_dict = infer_param_shape(symbol, data_shapes)
-    arg_params['rpn_conv_3x3_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['rpn_conv_3x3_weight'])
-    arg_params['rpn_cls_score_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['rpn_cls_score_weight'])
-    arg_params['rpn_bbox_pred_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['rpn_bbox_pred_weight'])
-    arg_params['cls_score_weight'] = mx.random.normal(0, 0.01, shape=arg_shape_dict['cls_score_weight'])
-    arg_params['bbox_pred_weight'] = mx.random.normal(0, 0.001, shape=arg_shape_dict['bbox_pred_weight'])
     for P in range(2, 6):
         arg_params['P{}_conv_lat_weight'.format(P)] = mx.random.normal(0, 0.01, shape=arg_shape_dict['P{}_conv_lat_weight'.format(P)])
     for P in range(2, 5):
