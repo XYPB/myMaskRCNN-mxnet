@@ -199,7 +199,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         # print(conv_fpn_feat['stride%s' % stride].infer_shape(data=(2, 3, 1000, 1000)))
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
-                                        num_filter=512,
+                                        num_filter=1024,
                                         weight=rpn_conv_weight,
                                         bias=rpn_conv_bias)
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
@@ -381,7 +381,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
-                                        num_filter=512,
+                                        num_filter=1024,
                                         weight=rpn_conv_weight,
                                         bias=rpn_conv_bias)
         rpn_relu = mx.symbol.Activation(data=rpn_conv,

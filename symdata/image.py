@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 
 
-def get_image(roi_rec, short, max_size, mean, std):
+def get_image(roi_rec, short, max_size, mean, std, test=False):
     """
     read, resize, transform image, return im_tensor, im_info, gt_boxes
     roi_rec should have keys: ["image", "boxes", "gt_classes", "flipped"]
@@ -13,7 +13,7 @@ def get_image(roi_rec, short, max_size, mean, std):
     im = imdecode(roi_rec['image'])
     if roi_rec["flipped"]:
         im = im[:, ::-1, :]
-    im, im_scale = resize(im, short, max_size)
+    im, im_scale = resize(im, short, max_size, test)
     height, width = im.shape[:2]
     im_info = np.array([height, width, im_scale], dtype=np.float32)
     im_tensor = transform(im, mean, std)
@@ -40,7 +40,7 @@ def imdecode(image_path):
     return im
 
 
-def resize(im, short, max_size):
+def resize(im, short, max_size, test=False):
     """
     only resize input image to target size and return scale
     :param im: BGR image input by opencv
@@ -55,7 +55,8 @@ def resize(im, short, max_size):
     # prevent bigger axis from being more than max_size:
     if np.round(im_scale * im_size_max) > max_size:
         im_scale = float(max_size) / float(im_size_max)
-    im = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
+    if not test or im_scale > 1:
+        im = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
     return im, im_scale
 
 
