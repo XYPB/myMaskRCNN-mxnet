@@ -149,8 +149,8 @@ def get_resnet50_test(args):
     from symnet.symbol_resnet import get_resnet_test
     if not args.params:
         args.params = 'model/resnet50-0010.params'
-    args.img_pixel_means = (0.485, 0.456, 0.406)
-    args.img_pixel_stds = (0.229, 0.224, 0.225)
+    args.img_pixel_means = (0.0, 0.0, 0.0)
+    args.img_pixel_stds = (1.0, 1.0, 1.0)
     args.rpn_feat_stride = 16
     args.rcnn_feat_stride = 16
     args.rcnn_pooled_size = (14, 14)

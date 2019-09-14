@@ -16,7 +16,7 @@ def get_image(roi_rec, short, max_size, mean, std, test=False):
     im, im_scale = resize(im, short, max_size, test)
     height, width = im.shape[:2]
     im_info = np.array([height, width, im_scale], dtype=np.float32)
-    im_tensor = transform(im/255.0, mean, std)
+    im_tensor = transform(im, mean, std)
 
     # gt boxes: (x1, y1, x2, y2, cls)
     if roi_rec['gt_classes'].size > 0:

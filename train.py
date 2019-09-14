@@ -264,8 +264,8 @@ def get_resnet50_train(args):
         args.pretrained = 'model/resnet-50-0000.params'
     if not args.save_prefix:
         args.save_prefix = 'model/resnet50'
-    args.img_pixel_means = (0.485, 0.456, 0.406)
-    args.img_pixel_stds = (0.229, 0.224, 0.225)
+    args.img_pixel_means = (0.0, 0.0, 0.0)
+    args.img_pixel_stds = (1.0, 1.0, 1.0)
     args.net_fixed_params = ['conv0', 'stage1', 'gamma', 'beta']
     args.rpn_feat_stride = 16
     args.rcnn_feat_stride = 16

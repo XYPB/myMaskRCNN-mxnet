@@ -78,21 +78,25 @@ def get_resnet_conv_down(conv_feat):
     base_features = conv_feat
     num_filters = [256, 256, 256, 256]
     num_stages = len(num_filters) + 1  # usually 5
+    weight_init = mx.init.Xavier(rnd_type='gaussian', factor_type='out', magnitude=2.)
     tmp_outputs = []
     # num_filter is 256 in ori paper
     for i, (bf, f) in enumerate(zip(base_features, num_filters)):
         if i == 0:
             y = mx.sym.Convolution(y, num_filter=f, kernel=(1, 1), pad=(0, 0),
                                     stride=(1, 1), no_bias=False,
-                                    name="P{}_conv_lat".format(num_stages - i))
+                                    name="P{}_conv_lat".format(num_stages - i),
+                                    attr={'__init__': weight_init})
             
             y_p6 = mx.sym.Convolution(y, num_filter=f, kernel=(3, 3), pad=(1, 1),
                                         stride=(2, 2), no_bias=False,
-                                        name='P{}_conv1'.format(num_stages + 1))
+                                        name='P{}_conv1'.format(num_stages + 1),
+                                        attr={'__init__': weight_init})
         else:
             bf = mx.sym.Convolution(bf, num_filter=f, kernel=(1, 1), pad=(0, 0),
                                     stride=(1, 1), no_bias=False,
-                                    name="P{}_conv_lat".format(num_stages - i))
+                                    name="P{}_conv_lat".format(num_stages - i),
+                                    attr={'__init__': weight_init})
             y = mx.sym.UpSampling(y, scale=2, sample_type='nearest',
                                     name="P{}_upsp".format(num_stages - i))
 
@@ -105,7 +109,8 @@ def get_resnet_conv_down(conv_feat):
             y = mx.sym.ElementWiseSum(bf, y, name="P{}_sum".format(num_stages - i))
         # Reduce the aliasing effect of upsampling described in ori paper
         out = mx.sym.Convolution(y, num_filter=f, kernel=(3, 3), pad=(1, 1), stride=(1, 1),
-                                    no_bias=False, name='P{}_conv1'.format(num_stages - i))
+                                    no_bias=False, name='P{}_conv1'.format(num_stages - i),
+                                    attr={'__init__': weight_init})
         
         tmp_outputs.append(out)
     P2, P3, P4, P5 = tuple(tmp_outputs[::-1])
@@ -115,6 +120,16 @@ def get_resnet_conv_down(conv_feat):
     conv_fpn_feat.update({"stride64":P6, "stride32":P5, "stride16":P4, "stride8":P3, "stride4":P2})
 
     return conv_fpn_feat, [P6, P5, P4, P3, P2]
+
+
+def get_resnet_top_feature(data, units, filter_list):
+    unit = residual_unit(data=data, num_filter=filter_list[3], stride=(2, 2), dim_match=False, name='stage4_unit1')
+    for i in range(2, units[3] + 1):
+        unit = residual_unit(data=unit, num_filter=filter_list[3], stride=(1, 1), dim_match=True, name='stage4_unit%s' % i)
+    bn1 = mx.sym.BatchNorm(data=unit, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name='bn1')
+    relu1 = mx.sym.Activation(data=bn1, act_type='relu', name='relu1')
+    pool1 = mx.symbol.Pooling(data=relu1, global_pool=True, kernel=(7, 7), pool_type='avg', name='pool1')
+    return pool1
 
 
 def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
