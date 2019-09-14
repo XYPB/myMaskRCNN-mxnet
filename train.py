@@ -48,10 +48,11 @@ def train_net(sym, roidb, args):
                               args.img_pixel_means, args.img_pixel_stds, feat_syms, ags, asp, shuffle=True)
 
     # produce shape max possible
-    data_names = ['data', 'im_info', 'gt_boxes']
+    data_names = ['data', 'im_info', 'gt_boxes', 'seg']
     data_shapes = [('data', (batch_size, 3, args.img_long_side, args.img_long_side)),
                     ('im_info', (batch_size, 3)),
-                    ('gt_boxes', (batch_size, 100, 5))]
+                    ('gt_boxes', (batch_size, 100, 5)),
+                    ('seg', (batch_size, args.img_long_side, args.img_long_side))]
     label_names = []
     label_shapes = []
     num_anchors_total = 0
@@ -104,9 +105,13 @@ def train_net(sym, roidb, args):
     eval_metric = mtrs.RCNNAccMetric()
     cls_metric = mtrs.RCNNLogLossMetric()
     bbox_metric = mtrs.RCNNL1LossMetric()
+
+    mask_cls_metric = mtrs.MaskLogLossMetric()
+    mask_eval_metric = mtrs.MaskAccMetric()
+
     eval_metrics = mtrs.mx.metric.CompositeEvalMetric()
     for child_metric in [fpn_eval_metric, fpn_cls_metric, fpn_bbox_metric,
-                        eval_metric, cls_metric, bbox_metric]:
+                        eval_metric, cls_metric, bbox_metric, mask_cls_metric, mask_eval_metric]:
         eval_metrics.add(child_metric)
 
     # callback
@@ -157,7 +162,7 @@ def parse_args():
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--network', type=str, default='resnet50', help='base network')
     parser.add_argument('--pretrained', type=str, default='', help='path to pretrained model')
-    parser.add_argument('--dataset', type=str, default='voc', help='training dataset')
+    parser.add_argument('--dataset', type=str, default='city', help='training dataset')
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
     parser.add_argument('--gpus', type=str, default='0', help='gpu devices eg. 0,1')
     parser.add_argument('--epochs', type=int, default=20, help='training epochs')
@@ -169,7 +174,7 @@ def parse_args():
     parser.add_argument('--save-prefix', type=str, default='', help='saving params prefix')
     # faster rcnn params
     parser.add_argument('--img-short-side', type=int, default=600)
-    parser.add_argument('--img-long-side', type=int, default=1000)
+    parser.add_argument('--img-long-side', type=int, default=2048)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
     parser.add_argument('--net-fixed-params', type=str, default='["conv0", "stage1", "gamma", "beta"]')
@@ -233,6 +238,17 @@ def get_coco(args):
         imdb.filter_roidb()
         imdb.append_flipped_images()
         roidb.extend(imdb.roidb)
+    return roidb
+
+
+def get_city(args):
+    from symimdb.cityscape import Cityscape
+    args.rcnn_num_classes = len(Cityscape.classes)
+    roidb = []
+    imdb = Cityscape('train', 'data', 'data/cityscape')
+    imdb.filter_roidb()
+    imdb.append_flipped_images()
+    roidb.extend(imdb.roidb)
     return roidb
 
 
@@ -307,7 +323,8 @@ def get_resnet101_train(args):
 def get_dataset(dataset, args):
     datasets = {
         'voc': get_voc,
-        'coco': get_coco
+        'coco': get_coco,
+        'city': get_city
     }
     if dataset not in datasets:
         raise ValueError("dataset {} not supported".format(dataset))

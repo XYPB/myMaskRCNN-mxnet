@@ -89,7 +89,7 @@ class TestLoader(mx.io.DataIter):
         im_tensor, im_info = [], []
         for index in indices:
             roi_rec = self._roidb[index]
-            b_im_tensor, b_im_info, _ = get_image(roi_rec, self._short, self._max_size, self._mean, self._std, test=True)
+            b_im_tensor, b_im_info, b_gt_boxes, b_seg = get_image(roi_rec, self._short, self._max_size, self._mean, self._std)
             im_tensor.append(b_im_tensor)
             im_info.append(b_im_info)
         im_tensor = mx.nd.array(tensor_vstack(im_tensor, pad=0))
@@ -132,7 +132,7 @@ class AnchorLoader(mx.io.DataIter):
         self._index = np.arange(self._size)
 
         # decide data and label names
-        self._data_name = ['data', 'im_info', 'gt_boxes']
+        self._data_name = ['data', 'im_info', 'gt_boxes', 'seg']
         self._label_name = ['label',
                             'bbox_target',
                             'bbox_weight',
@@ -175,21 +175,25 @@ class AnchorLoader(mx.io.DataIter):
 
     def getdata(self):
         indices = self.getindex()
-        im_tensor, im_info, gt_boxes = [], [], []
+        short_side = np.floor(np.random.uniform(800, 1025))
+        im_tensor, im_info, gt_boxes, seg = [], [], [], []
         for index in indices:
             roi_rec = self._roidb[index]
-            b_im_tensor, b_im_info, b_gt_boxes = get_image(roi_rec, self._short, self._max_size, self._mean, self._std)
+            b_im_tensor, b_im_info, b_gt_boxes, b_seg = get_image(roi_rec, short_side, self._max_size, self._mean, self._std)
             im_tensor.append(b_im_tensor)
             im_info.append(b_im_info)
             gt_boxes.append(b_gt_boxes)
+            seg.append(b_seg)
+            # print(b_seg)
         im_tensor = mx.nd.array(tensor_vstack(im_tensor, pad=0))
         im_info = mx.nd.array(tensor_vstack(im_info, pad=0))
         gt_boxes = mx.nd.array(tensor_vstack(gt_boxes, pad=-1))
-        self._data = im_tensor, im_info, gt_boxes
+        seg = mx.nd.array(tensor_vstack(seg, pad=0))
+        self._data = im_tensor, im_info, gt_boxes, seg
         return self._data
 
     def getlabel(self):
-        im_tensor, im_info, gt_boxes = self._data
+        im_tensor, im_info, gt_boxes, seg = self._data
 
         label_list = []
         bbox_target_list = []

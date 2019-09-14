@@ -6,7 +6,7 @@ RPN_FEAT_STRIDE = [64, 32, 16, 8, 4]
 def get_names():
     pred = ['rpn_cls_output64',
             'rpn_bbox_loss64',
-            'rcnn_cls_prob', 'rcnn_bbox_loss', 'rcnn_label']
+            'rcnn_cls_prob', 'rcnn_bbox_loss', 'rcnn_label', 'mask_prob', 'mask_target', 'mask_weight']
     label = ['label_stride64',
             'bbox_target_stride64',
             'bbox_weight_stride64',]
@@ -139,3 +139,50 @@ class RCNNL1LossMetric(mx.metric.EvalMetric):
 
         self.sum_metric += np.sum(bbox_loss)
         self.num_inst += num_inst
+
+
+class MaskLogLossMetric(mx.metric.EvalMetric):
+    def __init__(self):
+        super(MaskLogLossMetric, self).__init__('MaskLogLoss')
+        self.pred, self.label = get_names()
+
+    def update(self, labels, preds):
+        # reshape and concat
+        label = preds[self.pred.index('rcnn_label')].asnumpy().reshape((-1,)).astype('Int32')
+        num_classes = preds[self.pred.index('mask_target')].shape[1]
+        mask_target = preds[self.pred.index('mask_target')].asnumpy().reshape((-1, num_classes, 28, 28))
+        mask_weight = preds[self.pred.index('mask_weight')].asnumpy().reshape((-1, num_classes, 1,1))
+        mask_prob = preds[self.pred.index('mask_prob')].asnumpy()  # (n_rois, c, h, w)
+
+        real_inds   = np.where(label != -1)[0]
+        n_rois      = real_inds.shape[0]
+        mask_prob   = mask_prob[real_inds, label[real_inds]]
+        mask_target = mask_target[real_inds, label[real_inds]]
+        mask_weight = mask_weight[real_inds, label[real_inds]]
+        l = mask_weight*mask_target * np.log(mask_prob + 1e-14) + mask_weight * (1 - mask_target) * np.log(1 - mask_prob + 1e-14)
+        self.sum_metric += -np.sum(l)
+        self.num_inst += mask_prob.shape[-1] * mask_prob.shape[-2] * n_rois
+
+class MaskAccMetric(mx.metric.EvalMetric):
+    def __init__(self):
+        super(MaskAccMetric, self).__init__('MaskACC')
+        self.pred, self.label = get_names()
+
+    def update(self, labels, preds):
+        # reshape and concat
+        label = preds[self.pred.index('rcnn_label')].asnumpy().reshape((-1,)).astype('Int32')
+        num_classes = preds[self.pred.index('mask_target')].shape[1]
+        mask_target = preds[self.pred.index('mask_target')].asnumpy().reshape((-1, num_classes, 28, 28))
+        mask_weight = preds[self.pred.index('mask_weight')].asnumpy().reshape((-1, num_classes, 1,1))
+        mask_prob = preds[self.pred.index('mask_prob')].asnumpy()  # (n_rois, c, h, w)
+
+        real_inds = np.where(label != -1)[0]
+        n_rois = real_inds.shape[0]
+        mask_prob   = mask_prob[real_inds, label[real_inds]]
+        mask_target = mask_target[real_inds, label[real_inds]]
+        mask_weight = mask_weight[real_inds, label[real_inds]]
+        idx = np.where(np.logical_and(mask_prob > 0.5, mask_weight == 1))
+        mask_pred = np.zeros_like(mask_prob)
+        mask_pred[idx] = 1
+        self.sum_metric += np.sum(mask_target == mask_pred)
+        self.num_inst += mask_prob.shape[-1] * mask_prob.shape[-2] * n_rois

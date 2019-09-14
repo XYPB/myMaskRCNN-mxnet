@@ -1,8 +1,10 @@
 import numpy as np
 import cv2
 
+import PIL.Image as Image
 
-def get_image(roi_rec, short, max_size, mean, std, test=False):
+
+def get_image(roi_rec, short, max_size, mean, std):
     """
     read, resize, transform image, return im_tensor, im_info, gt_boxes
     roi_rec should have keys: ["image", "boxes", "gt_classes", "flipped"]
@@ -13,7 +15,7 @@ def get_image(roi_rec, short, max_size, mean, std, test=False):
     im = imdecode(roi_rec['image'])
     if roi_rec["flipped"]:
         im = im[:, ::-1, :]
-    im, im_scale = resize(im, short, max_size, test)
+    im, im_scale = resize(im, short, max_size)
     height, width = im.shape[:2]
     im_info = np.array([height, width, im_scale], dtype=np.float32)
     im_tensor = transform(im, mean, std)
@@ -28,8 +30,20 @@ def get_image(roi_rec, short, max_size, mean, std, test=False):
         gt_boxes[:, 0:4] *= im_scale
     else:
         gt_boxes = np.empty((0, 5), dtype=np.float32)
+    
+    if roi_rec['ins_seg'].endswith("npz"):
+        im_seg = np.load(roi_rec['ins_seg'])["arr_0"]
+        im_seg = Image.fromarray(im_seg)
+    else:
+        im_seg = Image.open(roi_rec['ins_seg'])
+    im_seg = im_seg.resize((width, height), Image.NEAREST)
+    pixel = np.round(list(im_seg.getdata()))
+    im_seg = np.array(pixel, dtype=np.uint32).reshape([im_seg.size[1], im_seg.size[0]])
+    # print(im_seg.shape)
+    if roi_rec["flipped"]:
+        im_seg = im_seg[:, ::-1]
 
-    return im_tensor, im_info, gt_boxes
+    return im_tensor, im_info, gt_boxes, im_seg
 
 
 def imdecode(image_path):

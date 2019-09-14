@@ -1,5 +1,5 @@
 import mxnet as mx
-from . import proposal_target, assign_rois, proposal_fpn
+from . import proposal_target, assign_rois, proposal_fpn, mask_output
 
 eps=2e-5
 use_global_stats=True
@@ -122,15 +122,27 @@ def get_resnet_conv_down(conv_feat):
     return conv_fpn_feat, [P6, P5, P4, P3, P2]
 
 
-def get_resnet_top_feature(data, units, filter_list):
-    unit = residual_unit(data=data, num_filter=filter_list[3], stride=(2, 2), dim_match=False, name='stage4_unit1')
-    for i in range(2, units[3] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[3], stride=(1, 1), dim_match=True, name='stage4_unit%s' % i)
-    bn1 = mx.sym.BatchNorm(data=unit, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name='bn1')
-    relu1 = mx.sym.Activation(data=bn1, act_type='relu', name='relu1')
-    pool1 = mx.symbol.Pooling(data=relu1, global_pool=True, kernel=(7, 7), pool_type='avg', name='pool1')
-    return pool1
-
+def get_top_feature(conv_fpn_feat, rois_list, pooled_size=(7,7)):
+    _, x1, y1, x2, y2 = mx.symbol.split(rois_list, axis=-1, num_outputs=5)
+    h = y2 - y1 + 1
+    w = x2 - x1 + 1
+    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
+    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
+    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
+    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
+    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
+    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
+    pooled_roi_feats = []
+    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
+        # Pool features with all rois first, and then set invalid pooled features to zero,
+        # at last ele-wise add together to aggregate all features.
+        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_list, pooled_size,
+                                            1. / stride,
+                                            sample_ratio=2)
+        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
+        pooled_roi_feats.append(pooled_feature)
+    # Ele-wise add to aggregate all pooled features
+    return mx.symbol.ElementWiseSum(*pooled_roi_feats)
 
 def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                     rpn_pre_topk, rpn_post_topk, rpn_nms_thresh, rpn_min_size, rpn_batch_rois,
@@ -168,6 +180,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     fpn_labels = mx.symbol.Variable(name='label')
     fpn_bbox_targets = mx.symbol.Variable(name='bbox_target')
     fpn_bbox_weights = mx.symbol.Variable(name='bbox_weight')
+    seg = mx.symbol.Variable(name="seg")
     
     # rpn_label = mx.symbol.Variable(name='label')
     # rpn_bbox_target = mx.symbol.Variable(name='bbox_target')
@@ -272,55 +285,49 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1 / rpn_batch_rois)
 
     rois_list_concat = mx.symbol.Concat(*rois_list, dim=0, name='rois_list_concat')
-    group = mx.symbol.Custom(rois=rois_list_concat, gt_boxes=gt_boxes, op_type='proposal_target',
-                            num_classes=num_classes, batch_images=rcnn_batch_size,
+    group = mx.symbol.Custom(rois=rois_list_concat, gt_boxes=gt_boxes, seg=seg, op_type='proposal_target',
+                            num_classes=num_classes, batch_images=rcnn_batch_size, im_info=im_info,
                             batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
                             fg_overlap=rcnn_fg_overlap, box_stds=rcnn_bbox_stds)
     
-    rois_list_concat = group[0]
-    labels_list_concat = group[1]
-    bbox_target_concat = group[2]
-    bbox_weight_concat = group[3]
+    rois_list = group[0]
+    labels_list = group[1]
+    bbox_target = group[2]
+    bbox_weight = group[3]
+    mask_target = group[4]
+    mask_weight = group[5]
 
 
-    # rpn网络的rois
-    # rpn 网络的输出
-    
-    _, x1, y1, x2, y2 = mx.symbol.split(rois_list_concat, axis=-1, num_outputs=5)
-    h = y2 - y1 + 1
-    w = x2 - x1 + 1
-    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
-    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
-    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
-    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
-    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
-    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
-    pooled_roi_feats = []
-    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
-        # Pool features with all rois first, and then set invalid pooled features to zero,
-        # at last ele-wise add together to aggregate all features.
-        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_list_concat, (7, 7),
-                                            1. / stride,
-                                            sample_ratio=2)
-        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
-        pooled_roi_feats.append(pooled_feature)
-    # Ele-wise add to aggregate all pooled features
-    rois_align_concat = mx.symbol.ElementWiseSum(*pooled_roi_feats)
+    mask_top_feat = get_top_feature(conv_fpn_feat, rois_list, pooled_size=(14, 14))
 
-    # stride = 32
-    # roi_pool = mx.symbol.contrib.ROIAlign(
-    #         name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois_list_concat,
-    #         pooled_size=(7, 7),
-    #         spatial_scale=1.0 / stride)
-    # rois_align_concat = roi_pool
-    # rcnn top feature
-    # top_feat = get_resnet_top_feature(roi_pool, units=units, filter_list=filter_list)
-    # 删掉res5，直接把roi结果喂到rcnn cla，bbox，mask；
-    # Mask
+    # mask_deconv1 = mx.symbol.Deconvolution(data=top_feat, kernel=(2, 2), stride=(2, 2), num_filter=256,
+    #                                         name="mask_deconv1")
+    # mask_relu1 = mx.symbol.Activation(data=mask_deconv1, act_type="relu", name="mask_relu1")
+    mask_conv_tmp = mx.symbol.Convolution(data=mask_top_feat, kernel=(3, 3), num_filter=256, pad=(1, 1),
+                                          name="mask_conv_t1")
+    mask_conv_tmp = mx.symbol.Activation(data=mask_conv_tmp, act_type="relu")
+    mask_conv_tmp = mx.symbol.Convolution(data=mask_conv_tmp, kernel=(3, 3), num_filter=256, pad=(1, 1),
+                                          name="mask_conv_t2")
+    mask_conv_tmp = mx.symbol.Activation(data=mask_conv_tmp, act_type="relu")
+    mask_conv_tmp = mx.symbol.Convolution(data=mask_conv_tmp, kernel=(3, 3), num_filter=256, pad=(1, 1),
+                                          name="mask_conv_t3")
+    mask_conv_tmp = mx.symbol.Activation(data=mask_conv_tmp, act_type="relu")
+    mask_conv_tmp = mx.symbol.Convolution(data=mask_conv_tmp, kernel=(3, 3), num_filter=256, pad=(1, 1),
+                                          name="mask_conv_t4")
+    mask_conv_tmp = mx.symbol.Activation(data=mask_conv_tmp, act_type="relu")
+    mask_deconv2 = mx.symbol.Deconvolution(data=mask_conv_tmp, kernel=(2, 2), stride=(2, 2), num_filter=256,
+                                            name="mask_deconv2")
+    mask_relu2 = mx.symbol.Activation(data=mask_deconv2, act_type="relu")
+    mask_conv2 = mx.symbol.Convolution(data=mask_relu2, kernel=(1, 1), num_filter=num_classes,
+                                          name="mask_conv2")
+    mask_prob = mx.symbol.Activation(data=mask_conv2, act_type='sigmoid', name="mask_prob")
+    mask_output = mx.symbol.Custom(mask_prob=mask_prob, mask_target=mask_target, mask_weight=mask_weight,
+                                   label=labels_list, name="mask_output", op_type='MaskOutput')
+
+    box_top_feature = get_top_feature(conv_fpn_feat, rois_list)
 
     # rcnn classification
-
-    flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
+    flatten = mx.symbol.Flatten(data=box_top_feature, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
@@ -328,15 +335,15 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
 
     cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
-    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat, normalization='batch')
+    cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list, normalization='batch')
 
     # rcnn bbox regression
     bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
-    bbox_loss_ = bbox_weight_concat * mx.symbol.smooth_l1(name='bbox_loss_', scalar=1.0, data=(bbox_pred - bbox_target_concat))
+    bbox_loss_ = bbox_weight * mx.symbol.smooth_l1(name='bbox_loss_', scalar=1.0, data=(bbox_pred - bbox_target))
     bbox_loss = mx.sym.MakeLoss(name='bbox_loss', data=bbox_loss_, grad_scale=1.0 / rcnn_batch_rois)
 
     # reshape output
-    label = mx.symbol.Reshape(data=labels_list_concat, shape=(rcnn_batch_size, -1), name='label_reshape')
+    label = mx.symbol.Reshape(data=labels_list, shape=(rcnn_batch_size, -1), name='label_reshape')
     cls_prob = mx.symbol.Reshape(data=cls_prob, shape=(rcnn_batch_size, -1, num_classes), name='cls_prob_reshape')
     bbox_loss = mx.symbol.Reshape(data=bbox_loss, shape=(rcnn_batch_size, -1, 4 * num_classes), name='bbox_loss_reshape')
 
@@ -346,9 +353,9 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     group = mx.symbol.Group([rpn_cls_output,
                             rpn_bbox_loss,
                             cls_prob, bbox_loss,
-                            mx.symbol.BlockGrad(label)])
-    # group = mx.symbol.Group([rpn_cls_output_concat,
-    #                         rpn_bbox_loss_concat,
+                            mx.symbol.BlockGrad(label), mask_output, mask_target, mask_weight])
+    # group = mx.symbol.Group([rpn_cls_output,
+    #                         rpn_bbox_loss,
     #                         cls_prob, bbox_loss,
     #                         mx.symbol.BlockGrad(label)])
     return group
@@ -418,8 +425,7 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_cls_prob_dict.update({'cls_prob_stride%s'%stride:rpn_cls_prob_reshape})
         rpn_bbox_pred_dict.update({'bbox_pred_stride%s'%stride:rpn_bbox_pred})
 
-        # rpn proposal
-
+    # Proposal
     args_dict = {}
     args_dict.update(rpn_cls_prob_dict)
     args_dict.update(rpn_bbox_pred_dict)
@@ -431,52 +437,12 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
                 'rpn_post_nms_top_n':rpn_post_topk,
                 'threshold':rpn_nms_thresh}
     args_dict.update(aux_dict)
-    # Proposal
-    rois_concat = mx.symbol.Custom(**args_dict)
-    
-    
-    _, x1, y1, x2, y2 = mx.symbol.split(rois_concat, axis=-1, num_outputs=5)
-    h = y2 - y1 + 1
-    w = x2 - x1 + 1
-    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
-    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
-    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
-    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
-    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
-    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
-    pooled_roi_feats = []
-    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
-        # Pool features with all rois first, and then set invalid pooled features to zero,
-        # at last ele-wise add together to aggregate all features.
-        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_concat, (7, 7),
-                                            1. / stride,
-                                            sample_ratio=2)
-        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
-        pooled_roi_feats.append(pooled_feature)
-    # Ele-wise add to aggregate all pooled features
-    rois_align_concat = mx.symbol.ElementWiseSum(*pooled_roi_feats)
-    
+    rois_list = mx.symbol.Custom(**args_dict)
 
-    # group = mx.symbol.Custom(
-    #     rois=rois_concat,
-    #     P2=conv_fpn_feat['stride4'],
-    #     P3=conv_fpn_feat['stride8'],
-    #     P4=conv_fpn_feat['stride16'],
-    #     P5=conv_fpn_feat['stride32'],
-    #     op_type='assign_rois'
-    #     )
-    # rois_align_concat = group[0]
-    # rpn 网络的输出
-    # rpn网络loss的weight和target
-
-    # rcnn top feature
-    # top_feat = get_resnet_top_feature(roi_pool, units=units, filter_list=filter_list)
-    # 删掉res5，直接把roi结果喂到rcnn cla，bbox，mask；
-    # Mask
+    box_top_feature = get_top_feature(conv_fpn_feat, rois_list)
 
     # rcnn classification
-
-    flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
+    flatten = mx.symbol.Flatten(data=box_top_feature, name="flatten")
     fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
     relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
     # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
@@ -496,5 +462,5 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     # group output
     # print(mx.symbol.BlockGrad(label))
 
-    group = mx.symbol.Group([rois_concat, cls_prob, bbox_pred])
+    group = mx.symbol.Group([rois_list, cls_prob, bbox_pred])
     return group

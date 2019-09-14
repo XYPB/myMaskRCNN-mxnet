@@ -78,12 +78,12 @@ def parse_args():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--network', type=str, default='resnet50', help='base network')
     parser.add_argument('--params', type=str, default='', help='path to trained model')
-    parser.add_argument('--dataset', type=str, default='voc', help='training dataset')
+    parser.add_argument('--dataset', type=str, default='city', help='training dataset')
     parser.add_argument('--imageset', type=str, default='', help='imageset splits')
     parser.add_argument('--gpu', type=int, default=0, help='gpu device eg. 0')
     # faster rcnn params
-    parser.add_argument('--img-short-side', type=int, default=600)
-    parser.add_argument('--img-long-side', type=int, default=1000)
+    parser.add_argument('--img-short-side', type=int, default=1024)
+    parser.add_argument('--img-long-side', type=int, default=2048)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
     parser.add_argument('--rpn-feat-stride', type=int, default=16)
@@ -125,6 +125,14 @@ def get_coco(args):
         args.imageset = 'val2017'
     args.rcnn_num_classes = len(coco.classes)
     return coco(args.imageset, 'data', 'data/coco')
+
+
+def get_city(args):
+    from symimdb.cityscape import Cityscape
+    if not args.imageset:
+        args.imageset = 'val'
+    args.rcnn_num_classes = len(Cityscape.classes)
+    return Cityscape(args.imageset, 'data', 'data/cityscape')
 
 
 def get_vgg16_test(args):
@@ -183,8 +191,9 @@ def get_resnet101_test(args):
 
 def get_dataset(dataset, args):
     datasets = {
-        'voc': get_voc,
-        'coco': get_coco
+        'city': get_voc,
+        'coco': get_coco,
+        'city': get_city
     }
     if dataset not in datasets:
         raise ValueError("dataset {} not supported".format(dataset))
