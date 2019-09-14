@@ -266,7 +266,7 @@ def get_resnet50_train(args):
         args.save_prefix = 'model/resnet50'
     args.img_pixel_means = (0.0, 0.0, 0.0)
     args.img_pixel_stds = (1.0, 1.0, 1.0)
-    args.net_fixed_params = ['conv0', 'stage1', 'gamma', 'beta']
+    args.net_fixed_params = ['gamma', 'beta']
     args.rpn_feat_stride = 16
     args.rcnn_feat_stride = 16
     args.rcnn_pooled_size = (14, 14)
