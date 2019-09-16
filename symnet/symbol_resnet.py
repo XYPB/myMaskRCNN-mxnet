@@ -68,12 +68,6 @@ def get_resnet_feature(data, units, filter_list):
 
 
 def get_resnet_conv_down(conv_feat):
-
-    # e.g. For ResNet50, the feature is :
-    # outputs = ['stage1_activation2', 'stage2_activation3',
-    #            'stage3_activation5', 'stage4_activation2']
-    # with regard to [conv2, conv3, conv4, conv5] -> [C2, C3, C4, C5]
-    # append more layers with reversed order : [P5, P4, P3, P2]
     y = conv_feat[0]
     base_features = conv_feat
     num_filters = [256, 256, 256, 256]

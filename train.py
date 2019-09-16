@@ -13,6 +13,7 @@ from symnet.model import load_param, infer_data_shape, check_shape, initialize_f
 import symnet.metric as mtrs
 
 import os
+import time
 os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = "0"
 
 RPN_FEAT_STRIDE = [64, 32, 16, 8, 4]
@@ -115,9 +116,13 @@ def train_net(sym, roidb, args):
         eval_metrics.add(child_metric)
 
     # callback
+    folder = time.strftime('%Y%m%d_%H_%M_%S',time.localtime(time.time()))
+    path = os.path.join("logs",folder)
+    if not os.path.exists(path):
+        os.mkdir(path)
     batch_end_callback = [
         mx.callback.Speedometer(batch_size, frequent=args.log_interval, auto_reset=True),
-        mx.contrib.tensorboard.LogMetricsCallback("logs")
+        mx.contrib.tensorboard.LogMetricsCallback(path)
     ]
     epoch_end_callback = mx.callback.do_checkpoint(args.save_prefix)
 
@@ -174,7 +179,7 @@ def parse_args():
     parser.add_argument('--save-prefix', type=str, default='', help='saving params prefix')
     # faster rcnn params
     parser.add_argument('--img-short-side', type=int, default=600)
-    parser.add_argument('--img-long-side', type=int, default=2048)
+    parser.add_argument('--img-long-side', type=int, default=2000)
     parser.add_argument('--img-pixel-means', type=str, default='(0.0, 0.0, 0.0)')
     parser.add_argument('--img-pixel-stds', type=str, default='(1.0, 1.0, 1.0)')
     parser.add_argument('--net-fixed-params', type=str, default='["conv0", "stage1", "gamma", "beta"]')
@@ -194,7 +199,7 @@ def parse_args():
     parser.add_argument('--rcnn-feat-stride', type=int, default=16)
     parser.add_argument('--rcnn-pooled-size', type=str, default='(14, 14)')
     parser.add_argument('--rcnn-batch-size', type=int, default=1)
-    parser.add_argument('--rcnn-batch-rois', type=int, default=256)
+    parser.add_argument('--rcnn-batch-rois', type=int, default=128)
     parser.add_argument('--rcnn-fg-fraction', type=float, default=0.25)
     parser.add_argument('--rcnn-fg-overlap', type=float, default=0.5)
     parser.add_argument('--rcnn-bbox-stds', type=str, default='(0.1, 0.1, 0.2, 0.2)')
