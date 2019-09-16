@@ -243,6 +243,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_pred_reshape = mx.symbol.Reshape(data=rpn_bbox_pred,
                                                   shape=(0, 0, -1),
                                                   name="rpn_bbox_pred_reshape_stride%s" % stride)
+        rpn_bbox_pred_list.append(rpn_bbox_pred_reshape)
         rpn_cls_prob_dict.update({'cls_prob_stride%s'%stride:rpn_cls_prob_reshape})
         rpn_bbox_pred_dict.update({'bbox_pred_stride%s'%stride:rpn_bbox_pred})
 
