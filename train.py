@@ -112,7 +112,6 @@ def train_net(sym, roidb, args):
         eval_metrics.add(child_metric)
 
     # callback
-    # callback
     folder = time.strftime('%Y%m%d_%H%M%S',time.localtime(time.time()))
     path = os.path.join("logs",folder)
     if not os.path.exists(path):
@@ -186,7 +185,7 @@ def parse_args():
     parser.add_argument('--rpn-pre-nms-topk', type=int, default=12000)
     parser.add_argument('--rpn-post-nms-topk', type=int, default=2000)
     parser.add_argument('--rpn-nms-thresh', type=float, default=0.7)
-    parser.add_argument('--rpn-min-size', type=int, default=16)
+    parser.add_argument('--rpn-min-size', type=int, default=1)
     parser.add_argument('--rpn-batch-rois', type=int, default=256)
     parser.add_argument('--rpn-allowed-border', type=int, default=1000)
     parser.add_argument('--rpn-fg-fraction', type=float, default=0.5)
