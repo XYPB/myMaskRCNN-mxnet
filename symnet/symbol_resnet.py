@@ -192,6 +192,8 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     bbox_target_list = []
     bbox_weight_list = []
     rpn_cls_score_list = []
+    rpn_cls_prob_dict = {}
+    rpn_bbox_pred_dict = {}
     for i, stride in enumerate(RPN_FEAT_STRIDE):
         # print(i, stride)
         # print(fpn_bbox_targets[i])
@@ -241,18 +243,9 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_bbox_pred_reshape = mx.symbol.Reshape(data=rpn_bbox_pred,
                                                   shape=(0, 0, -1),
                                                   name="rpn_bbox_pred_reshape_stride%s" % stride)
+        rpn_cls_prob_dict.update({'cls_prob_stride%s'%stride:rpn_cls_prob_reshape})
+        rpn_bbox_pred_dict.update({'bbox_pred_stride%s'%stride:rpn_bbox_pred})
 
-        rpn_bbox_pred_list.append(rpn_bbox_pred_reshape)
-
-        # rpn proposal
-        rois = mx.symbol.contrib.MultiProposal(cls_prob=rpn_cls_prob_reshape, bbox_pred=rpn_bbox_pred, im_info=im_info, name='rois%s'%stride,
-                                                feature_stride=stride, scales=anchor_scales, ratios=anchor_ratios,
-                                                rpn_pre_nms_top_n=rpn_pre_topk, rpn_post_nms_top_n=rpn_post_topk,
-                                                threshold=rpn_nms_thresh, rpn_min_size=rpn_min_size)
-        
-        # rcnn roi proposal target
-        # print(stride)
-        rois_list.append(rois)
     
     rpn_cls_score_list = mx.symbol.concat(*rpn_cls_score_list, dim=2, name="rpn_cls_score_list_concat")
 
@@ -271,13 +264,27 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
                                                                 data=(rpn_bbox_pred - fpn_bbox_targets))
     rpn_bbox_loss = mx.sym.MakeLoss(name='rpn_bbox_loss%s'%stride, data=rpn_bbox_loss_, grad_scale=1 / rpn_batch_rois)
 
-    rois_list_concat = mx.symbol.Concat(*rois_list, dim=0, name='rois_list_concat')
-    group = mx.symbol.Custom(rois=rois_list_concat, gt_boxes=gt_boxes, op_type='proposal_target',
+
+    # rpn proposal
+    args_dict = {}
+    args_dict.update(rpn_cls_prob_dict)
+    args_dict.update(rpn_bbox_pred_dict)
+    aux_dict = {'im_info':im_info,'name':'rois',
+                'op_type':'proposal_fpn','output_score':False,
+                'feat_stride':RPN_FEAT_STRIDE,'scales':tuple(anchor_scales),
+                'ratios':tuple(anchor_ratios),
+                'rpn_pre_nms_top_n':rpn_pre_topk,
+                'rpn_post_nms_top_n':rpn_post_topk,
+                'threshold':rpn_nms_thresh}
+    args_dict.update(aux_dict)
+    # Proposal
+    rois_concat = mx.symbol.Custom(**args_dict)
+    group = mx.symbol.Custom(rois=rois_concat, gt_boxes=gt_boxes, op_type='proposal_target',
                             num_classes=num_classes, batch_images=rcnn_batch_size,
                             batch_rois=rcnn_batch_rois, fg_fraction=rcnn_fg_fraction,
                             fg_overlap=rcnn_fg_overlap, box_stds=rcnn_bbox_stds)
     
-    rois_list_concat = group[0]
+    rois_concat = group[0]
     labels_list_concat = group[1]
     bbox_target_concat = group[2]
     bbox_weight_concat = group[3]
@@ -286,7 +293,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     # rpn网络的rois
     # rpn 网络的输出
     
-    _, x1, y1, x2, y2 = mx.symbol.split(rois_list_concat, axis=-1, num_outputs=5)
+    _, x1, y1, x2, y2 = mx.symbol.split(rois_concat, axis=-1, num_outputs=5)
     h = y2 - y1 + 1
     w = x2 - x1 + 1
     roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
@@ -299,7 +306,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
         # Pool features with all rois first, and then set invalid pooled features to zero,
         # at last ele-wise add together to aggregate all features.
-        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_list_concat, (7, 7),
+        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_concat, (7, 7),
                                             1. / stride,
                                             sample_ratio=2)
         pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
@@ -309,7 +316,7 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
 
     # stride = 32
     # roi_pool = mx.symbol.contrib.ROIAlign(
-    #         name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois_list_concat,
+    #         name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois_concat,
     #         pooled_size=(7, 7),
     #         spatial_scale=1.0 / stride)
     # rois_align_concat = roi_pool
