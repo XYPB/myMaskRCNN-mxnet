@@ -12,6 +12,8 @@ from symnet.model import load_param, infer_data_shape, check_shape, initialize_f
 # from symnet.metric import RPNAccMetric, RPNLogLossMetric, RPNL1LossMetric, RCNNAccMetric, RCNNLogLossMetric, RCNNL1LossMetric
 import symnet.metric as mtrs
 
+import time
+
 import os
 os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = "0"
 
@@ -110,9 +112,14 @@ def train_net(sym, roidb, args):
         eval_metrics.add(child_metric)
 
     # callback
+    # callback
+    folder = time.strftime('%Y%m%d_%H%M%S',time.localtime(time.time()))
+    path = os.path.join("logs",folder)
+    if not os.path.exists(path):
+        os.mkdir(path)
     batch_end_callback = [
         mx.callback.Speedometer(batch_size, frequent=args.log_interval, auto_reset=True),
-        mx.contrib.tensorboard.LogMetricsCallback("logs")
+        mx.contrib.tensorboard.LogMetricsCallback(path)
     ]
     epoch_end_callback = mx.callback.do_checkpoint(args.save_prefix)
 
