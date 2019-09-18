@@ -1,5 +1,5 @@
 import mxnet as mx
-from . import proposal_target, assign_rois, proposal_fpn
+from . import proposal_target, assign_rois, proposal_fpn, output
 
 eps=2e-5
 use_global_stats=True
@@ -121,15 +121,36 @@ def get_resnet_conv_down(conv_feat):
 
     return conv_fpn_feat, [P6, P5, P4, P3, P2]
 
+def get_fpn_feature(rois, conv_fpn_feat, pooled_size=(7, 7)):
+    _, x1, y1, x2, y2 = mx.symbol.split(rois, axis=-1, num_outputs=5)
+    h = y2 - y1 + 1
+    w = x2 - x1 + 1
+    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
+    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
+    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
+    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
+    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
+    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
+    pooled_roi_feats = []
+    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
+        # Pool features with all rois first, and then set invalid pooled features to zero,
+        # at last ele-wise add together to aggregate all features.
+        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois, pooled_size,
+                                            1. / stride,
+                                            sample_ratio=2)
+        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
+        pooled_roi_feats.append(pooled_feature)
+    # Ele-wise add to aggregate all pooled features
+    return mx.symbol.ElementWiseSum(*pooled_roi_feats)
 
-def get_resnet_top_feature(data, units, filter_list):
-    unit = residual_unit(data=data, num_filter=filter_list[3], stride=(2, 2), dim_match=False, name='stage4_unit1')
-    for i in range(2, units[3] + 1):
-        unit = residual_unit(data=unit, num_filter=filter_list[3], stride=(1, 1), dim_match=True, name='stage4_unit%s' % i)
-    bn1 = mx.sym.BatchNorm(data=unit, fix_gamma=False, eps=eps, use_global_stats=use_global_stats, name='bn1')
-    relu1 = mx.sym.Activation(data=bn1, act_type='relu', name='relu1')
-    pool1 = mx.symbol.Pooling(data=relu1, global_pool=True, kernel=(7, 7), pool_type='avg', name='pool1')
-    return pool1
+def get_resnet_top_feature(data):
+    flatten = mx.symbol.Flatten(data=data, name="flatten")
+    fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
+    relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
+    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
+    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
+    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    return relu7
 
 
 def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
@@ -148,30 +169,9 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     fpn_bbox_targets = []
     fpn_bbox_weights = []
 
-    # 训练时需要的参数（train.py label shape name）
-    # for stride in RPN_FEAT_STRIDE:
-    #     l_tmp = mx.symbol.Variable(name='label_stride%s' %stride)
-    #     l_tmp_reshape = mx.symbol.Reshape(data=l_tmp,
-    #                                               shape=(0, 0, -1),
-    #                                               name="l_tmp_reshape_stride%s" % stride)
-    #     fpn_labels.append(l_tmp_reshape)
-    #     rpn_bbox_gt = mx.symbol.Variable(name='bbox_target_stride%s' %stride)
-    #     rpn_bbox_gt_reshape = mx.symbol.Reshape(data=rpn_bbox_gt,
-    #                                               shape=(0, 0, -1),
-    #                                               name="rpn_bbox_gt_reshape_stride%s" % stride)
-    #     fpn_bbox_targets.append(rpn_bbox_gt_reshape)
-    #     rpn_bbox_gt_w = mx.symbol.Variable(name='bbox_weight_stride%s' %stride)
-    #     rpn_bbox_gt_w_reshape = mx.symbol.Reshape(data=rpn_bbox_gt_w,
-    #                                               shape=(0, 0, -1),
-    #                                               name="rpn_bbox_weights_reshape_stride%s" % stride)
-    #     fpn_bbox_weights.append(rpn_bbox_gt_w_reshape)
     fpn_labels = mx.symbol.Variable(name='label')
     fpn_bbox_targets = mx.symbol.Variable(name='bbox_target')
     fpn_bbox_weights = mx.symbol.Variable(name='bbox_weight')
-    
-    # rpn_label = mx.symbol.Variable(name='label')
-    # rpn_bbox_target = mx.symbol.Variable(name='bbox_target')
-    # rpn_bbox_weight = mx.symbol.Variable(name='bbox_weight')
 
     # shared convolutional layers
     conv_feat = get_resnet_feature(data, units=units, filter_list=filter_list)
@@ -184,21 +184,11 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     rpn_conv_bbox_weight = mx.symbol.Variable('rpn_bbox_pred_weight')
     rpn_conv_bbox_bias = mx.symbol.Variable('rpn_bbox_pred_bias')
 
-    rois_pool_list = []
-    rois_list = []
     rpn_bbox_pred_list = []
-    rpn_bbox_loss_list = []
-    labels_list = []
-    bbox_target_list = []
-    bbox_weight_list = []
     rpn_cls_score_list = []
     rpn_cls_prob_dict = {}
     rpn_bbox_pred_dict = {}
     for i, stride in enumerate(RPN_FEAT_STRIDE):
-        # print(i, stride)
-        # print(fpn_bbox_targets[i])
-        # print(conv_fpn_feat['stride%s' % stride])
-        # print(conv_fpn_feat['stride%s' % stride].infer_shape(data=(2, 3, 1000, 1000)))
         rpn_conv = mx.symbol.Convolution(data=conv_fpn_feat['stride%s'%stride],
                                         kernel=(3, 3), pad=(1, 1),
                                         num_filter=1024,
@@ -207,8 +197,6 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
-        # _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
-        # print(output_shape)
         
         # fpn classification
         # ROI Proposal
@@ -294,52 +282,19 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     # rpn网络的rois
     # rpn 网络的输出
     
-    _, x1, y1, x2, y2 = mx.symbol.split(rois_concat, axis=-1, num_outputs=5)
-    h = y2 - y1 + 1
-    w = x2 - x1 + 1
-    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
-    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
-    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
-    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
-    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
-    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
-    pooled_roi_feats = []
-    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
-        # Pool features with all rois first, and then set invalid pooled features to zero,
-        # at last ele-wise add together to aggregate all features.
-        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_concat, (7, 7),
-                                            1. / stride,
-                                            sample_ratio=2)
-        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
-        pooled_roi_feats.append(pooled_feature)
-    # Ele-wise add to aggregate all pooled features
-    rois_align_concat = mx.symbol.ElementWiseSum(*pooled_roi_feats)
+    rois_align_concat = get_fpn_feature(rois_concat, conv_fpn_feat)
 
-    # stride = 32
-    # roi_pool = mx.symbol.contrib.ROIAlign(
-    #         name='roi_pool%s'%stride, data=conv_fpn_feat['stride%s'%stride], rois=rois_concat,
-    #         pooled_size=(7, 7),
-    #         spatial_scale=1.0 / stride)
-    # rois_align_concat = roi_pool
-    # rcnn top feature
-    # top_feat = get_resnet_top_feature(roi_pool, units=units, filter_list=filter_list)
-    # 删掉res5，直接把roi结果喂到rcnn cla，bbox，mask；
     # Mask
 
     # rcnn classification
 
-    flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
-    fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
-    relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
-    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
-    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    top_feat = get_resnet_top_feature(rois_align_concat)
 
-    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
+    cls_score = mx.symbol.FullyConnected(name='cls_score', data=top_feat, num_hidden=num_classes)
     cls_prob = mx.symbol.SoftmaxOutput(name='cls_prob', data=cls_score, label=labels_list_concat, normalization='batch')
 
     # rcnn bbox regression
-    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
+    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=top_feat, num_hidden=num_classes * 4)
     bbox_loss_ = bbox_weight_concat * mx.symbol.smooth_l1(name='bbox_loss_', scalar=1.0, data=(bbox_pred - bbox_target_concat))
     bbox_loss = mx.sym.MakeLoss(name='bbox_loss', data=bbox_loss_, grad_scale=1.0 / rcnn_batch_rois)
 
@@ -348,17 +303,10 @@ def get_resnet_train(anchor_scales, anchor_ratios, rpn_feature_stride,
     cls_prob = mx.symbol.Reshape(data=cls_prob, shape=(rcnn_batch_size, -1, num_classes), name='cls_prob_reshape')
     bbox_loss = mx.symbol.Reshape(data=bbox_loss, shape=(rcnn_batch_size, -1, 4 * num_classes), name='bbox_loss_reshape')
 
-    # group output
-    # print(mx.symbol.BlockGrad(label))
-
     group = mx.symbol.Group([rpn_cls_output,
                             rpn_bbox_loss,
                             cls_prob, bbox_loss,
                             mx.symbol.BlockGrad(label)])
-    # group = mx.symbol.Group([rpn_cls_output_concat,
-    #                         rpn_bbox_loss_concat,
-    #                         cls_prob, bbox_loss,
-    #                         mx.symbol.BlockGrad(label)])
     return group
 
 
@@ -395,9 +343,6 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
         rpn_relu = mx.symbol.Activation(data=rpn_conv,
                                         act_type="relu",
                                         name="rpn_relu")
-        # _, output_shape, _ = conv_fpn_feat['stride%s' % stride].infer_shape(data=(1, 3, 1000, 1000))
-        # print(output_shape)
-        
         # fpn classification
         # ROI Proposal
         rpn_cls_score = mx.symbol.Convolution(data=rpn_relu,
@@ -442,60 +387,17 @@ def get_resnet_test(anchor_scales, anchor_ratios, rpn_feature_stride,
     # Proposal
     rois_concat = mx.symbol.Custom(**args_dict)
     
+    rois_align_concat = get_fpn_feature(rois_concat, conv_fpn_feat)
     
-    _, x1, y1, x2, y2 = mx.symbol.split(rois_concat, axis=-1, num_outputs=5)
-    h = y2 - y1 + 1
-    w = x2 - x1 + 1
-    roi_level = mx.symbol.floor(4 + mx.symbol.log2(mx.symbol.sqrt(w * h) / 224.0 + eps))
-    roi_level = mx.symbol.squeeze(mx.symbol.clip(roi_level, 2, 5))
-    # [2,2,..,3,3,...,4,4,...,5,5,...] ``Prohibit swap order here``
-    # roi_level_sorted_args = mx.symbol.argsort(roi_level, is_ascend=True)
-    # roi_level = mx.symbol.sort(roi_level, is_ascend=True)
-    # rpn_rois = mx.symbol.take(rpn_rois, roi_level_sorted_args, axis=0)
-    pooled_roi_feats = []
-    for i, stride in enumerate(RPN_FEAT_STRIDE[1:]):
-        # Pool features with all rois first, and then set invalid pooled features to zero,
-        # at last ele-wise add together to aggregate all features.
-        pooled_feature = mx.symbol.contrib.ROIAlign(conv_fpn_feat['stride%s' % stride], rois_concat, (7, 7),
-                                            1. / stride,
-                                            sample_ratio=2)
-        pooled_feature = mx.symbol.where(roi_level == 5 - i, pooled_feature, mx.symbol.zeros_like(pooled_feature))
-        pooled_roi_feats.append(pooled_feature)
-    # Ele-wise add to aggregate all pooled features
-    rois_align_concat = mx.symbol.ElementWiseSum(*pooled_roi_feats)
-    
-
-    # group = mx.symbol.Custom(
-    #     rois=rois_concat,
-    #     P2=conv_fpn_feat['stride4'],
-    #     P3=conv_fpn_feat['stride8'],
-    #     P4=conv_fpn_feat['stride16'],
-    #     P5=conv_fpn_feat['stride32'],
-    #     op_type='assign_rois'
-    #     )
-    # rois_align_concat = group[0]
-    # rpn 网络的输出
-    # rpn网络loss的weight和target
-
-    # rcnn top feature
-    # top_feat = get_resnet_top_feature(roi_pool, units=units, filter_list=filter_list)
-    # 删掉res5，直接把roi结果喂到rcnn cla，bbox，mask；
-    # Mask
-
     # rcnn classification
 
-    flatten = mx.symbol.Flatten(data=rois_align_concat, name="flatten")
-    fc6 = mx.symbol.FullyConnected(data=flatten, num_hidden=1024, name='fc6')
-    relu6 = mx.symbol.Activation(data=fc6, act_type="relu", name="rcnn_relu6")
-    # drop6 = mx.symbol.Dropout(data=relu6, p=0.5, name="drop6")
-    fc7 = mx.symbol.FullyConnected(data=relu6, num_hidden=1024, name='fc7')
-    relu7 = mx.symbol.Activation(data=fc7, act_type="relu", name="rcnn_relu7")
+    top_feat = get_resnet_top_feature(rois_align_concat)
 
-    cls_score = mx.symbol.FullyConnected(name='cls_score', data=relu7, num_hidden=num_classes)
+    cls_score = mx.symbol.FullyConnected(name='cls_score', data=top_feat, num_hidden=num_classes)
     cls_prob = mx.symbol.softmax(name='cls_prob', data=cls_score)
 
     # rcnn bbox regression
-    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=relu7, num_hidden=num_classes * 4)
+    bbox_pred = mx.symbol.FullyConnected(name='bbox_pred', data=top_feat, num_hidden=num_classes * 4)
 
     # reshape output
     cls_prob = mx.symbol.Reshape(data=cls_prob, shape=(rcnn_batch_size, -1, num_classes), name='cls_prob_reshape')
