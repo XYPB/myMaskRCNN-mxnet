@@ -14,7 +14,7 @@ import symnet.metric as mtrs
 
 import os
 os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = "0"
-
+import time
 RPN_FEAT_STRIDE = [64, 32, 16, 8, 4]
 ANCHOR_SCALES = (8,)
 
@@ -110,9 +110,13 @@ def train_net(sym, roidb, args):
         eval_metrics.add(child_metric)
 
     # callback
+    folder = time.strftime('%Y%m%d_%H%M%S',time.localtime(time.time()))
+    path = os.path.join("logs",folder)
+    if not os.path.exists(path):
+        os.mkdir(path)
     batch_end_callback = [
         mx.callback.Speedometer(batch_size, frequent=args.log_interval, auto_reset=True),
-        mx.contrib.tensorboard.LogMetricsCallback("logs")
+        mx.contrib.tensorboard.LogMetricsCallback(path)
     ]
     epoch_end_callback = mx.callback.do_checkpoint(args.save_prefix)
 
